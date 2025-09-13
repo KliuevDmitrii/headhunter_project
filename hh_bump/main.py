@@ -37,21 +37,28 @@ def main():
 
         if not token:
             print(
-                "Нет сохранённого access_token — пробуем обновить через refresh_token"
+                "Нет сохранённого access_token — пробуем через refresh_token"
                 )
             token = refresh_access_token(
-                s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
+                s.oauth_token_url,
+                s.client_id,
+                s.client_secret,
+                s.refresh_token
             )
 
         api = HHApi(s.api_base, token)
 
         # проверка: жив ли токен (GET /me)
         try:
-            resp = requests.get(f"{s.api_base}/me", headers={"Authorization": f"Bearer {token}"}, timeout=15)
+            resp = requests.get(
+                f"{s.api_base}/me",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15)
             if resp.status_code == 401:
                 print("access_token истёк — обновляем через refresh_token")
                 token = refresh_access_token(
-                    s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
+                    s.oauth_token_url,
+                    s.client_id, s.client_secret, s.refresh_token
                 )
                 api = HHApi(s.api_base, token)
         except Exception:
@@ -74,7 +81,8 @@ def main():
 
         # 5) сохраняем состояние
         state["last_index"] = next_index
-        state["last_success_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        state["last_success_utc"] = datetime.now(
+            timezone.utc).isoformat().replace("+00:00", "Z")
         state["last_id"] = resume_id
         save_state(state)
 
