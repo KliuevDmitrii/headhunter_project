@@ -1,30 +1,23 @@
-# hh_bump/main.py
-import json
 from datetime import datetime, timedelta, timezone
 
+import requests
+
 from .config import Settings
-from .auth import refresh_access_token
+from .auth import (
+    get_stored_access_token,
+    refresh_access_token,
+    store_access_token,
+    load_state,
+    save_state,
+)
 from .api import HHApi
-
-
-def _load_state(path):
-    if path.exists():
-        try:
-            return json.loads(path.read_text())
-        except Exception:
-            return {}
-    return {}
-
-
-def _save_state(path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def main():
     s = Settings()
-    state = _load_state(s.state_path)
+    state = load_state()
 
-    # Мягкая защита от слишком частого запуска
+    # защита от слишком частых запусков
     last_run_iso = state.get("last_success_utc")
     if last_run_iso and s.min_interval_minutes > 0:
         try:
@@ -32,42 +25,58 @@ def main():
                 last_run_iso.replace("Z", "+00:00")
                 )
             if datetime.now(timezone.utc) - last_dt < timedelta(
-                minutes=s.min_interval_minutes
-            ):
+                minutes=s.min_interval_minutes):
                 print("Skip: min_interval_minutes guard")
                 return 0
         except Exception:
             pass
 
     try:
-        # 1) access_token через refresh_token
-        access = refresh_access_token(
-            s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
-        )
+        # 1) пробуем использовать сохранённый access_token
+        token = get_stored_access_token()
 
-        # 2) API клиент
-        api = HHApi(s.api_base, access)
+        if not token:
+            print(
+                "Нет сохранённого access_token — пробуем обновить через refresh_token"
+                )
+            token = refresh_access_token(
+                s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
+            )
 
-        # 3) Список резюме: из config.ini или все мои
+        api = HHApi(s.api_base, token)
+
+        # проверка: жив ли токен (GET /me)
+        try:
+            resp = requests.get(f"{s.api_base}/me", headers={"Authorization": f"Bearer {token}"}, timeout=15)
+            if resp.status_code == 401:
+                print("access_token истёк — обновляем через refresh_token")
+                token = refresh_access_token(
+                    s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
+                )
+                api = HHApi(s.api_base, token)
+        except Exception:
+            pass
+
+        # 2) список резюме
         all_ids = s.resume_ids or api.get_my_resume_ids()
         if not all_ids:
             raise RuntimeError(
-                "У вас нет опубликованных резюме для обновления")
+                "У вас нет опубликованных резюме для обновления."
+                )
 
-        # 4) Карусель: следующее резюме по кругу
+        # 3) карусель: выбираем следующее резюме
         last_index = state.get("last_index", -1)
         next_index = (last_index + 1) % len(all_ids)
         resume_id = all_ids[next_index]
 
-        # 5) Поднять одно резюме
+        # 4) поднимаем резюме
         api.publish_resume(resume_id)
 
-        # 6) Сохранить состояние
+        # 5) сохраняем состояние
         state["last_index"] = next_index
-        state["last_success_utc"] = datetime.now(
-            timezone.utc).isoformat().replace("+00:00", "Z")
+        state["last_success_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         state["last_id"] = resume_id
-        _save_state(s.state_path, state)
+        save_state(state)
 
         print("OK (bumped):", resume_id)
         return 0

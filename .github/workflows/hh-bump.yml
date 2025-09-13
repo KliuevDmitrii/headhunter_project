@@ -19,4 +19,5 @@ jobs:
           HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
           HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
           HH_REFRESH_TOKEN: ${{ secrets.HH_REFRESH_TOKEN }}
+          HH_ACCESS_TOKEN: ${{ secrets.HH_ACCESS_TOKEN }}
         run: python -m hh_bump.main
