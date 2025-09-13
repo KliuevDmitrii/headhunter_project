@@ -24,8 +24,9 @@ def main():
             last_dt = datetime.fromisoformat(
                 last_run_iso.replace("Z", "+00:00")
                 )
-            if datetime.now(timezone.utc) - last_dt < timedelta(
-                minutes=s.min_interval_minutes):
+            if datetime.now(
+                timezone.utc
+            ) - last_dt < timedelta(minutes=s.min_interval_minutes):
                 print("Skip: min_interval_minutes guard")
                 return 0
         except Exception:
