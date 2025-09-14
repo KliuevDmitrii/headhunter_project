@@ -7,22 +7,20 @@ from .auth import (
     refresh_access_token,
 )
 from .api import HHApi
+from .notifier import TelegramNotifier
 
 
 def main():
     s = Settings()
+    notifier = TelegramNotifier()
 
     try:
         # 1) пробуем использовать сохранённый access_token
         token = get_stored_access_token()
-
         if not token:
             print("Нет сохранённого access_token — пробуем обновить через refresh_token")
             token = refresh_access_token(
-                s.oauth_token_url,
-                s.client_id,
-                s.client_secret,
-                s.refresh_token
+                s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
             )
 
         api = HHApi(s.api_base, token)
@@ -32,14 +30,12 @@ def main():
             resp = requests.get(
                 f"{s.api_base}/me",
                 headers={"Authorization": f"Bearer {token}"},
-                timeout=15)
+                timeout=15,
+            )
             if resp.status_code == 401:
                 print("access_token истёк — обновляем через refresh_token")
                 token = refresh_access_token(
-                    s.oauth_token_url,
-                    s.client_id,
-                    s.client_secret,
-                    s.refresh_token
+                    s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
                 )
                 api = HHApi(s.api_base, token)
         except Exception:
@@ -60,19 +56,28 @@ def main():
             resume_id = all_ids[idx]
             try:
                 api.publish_resume(resume_id)
-                print(f"OK (bumped): {resume_id}")
+                msg = f"✅ Резюме поднято ({idx+1}/{n}): {resume_id}"
+                print(msg)
+                notifier.send(msg)
                 return 0
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 429:
-                    print(f"Skip resume {resume_id}: ещё нельзя поднимать (429)")
+                    msg = f"⚠️ Резюме {resume_id} ещё нельзя поднимать (429)"
+                    print(msg)
+                    notifier.send(msg)
                     continue
                 raise
 
-        print("Все резюме пока на cooldown, пропуск запуска.")
+        # если все резюме ещё на cooldown
+        msg = "⚠️ Все резюме пока на cooldown, пропуск запуска."
+        print(msg)
+        notifier.send(msg)
         return 0
 
     except Exception as e:
-        print("ERROR:", e)
+        msg = f"❌ Ошибка: {e}"
+        print(msg)
+        notifier.send(msg)
         return 1
 
 
