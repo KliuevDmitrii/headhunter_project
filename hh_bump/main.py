@@ -16,7 +16,6 @@ def main():
     s = Settings()
 
     # защита от слишком частых запусков
-    last_run_iso = None
     if s.min_interval_minutes > 0:
         try:
             # можно хранить это в будущем, если понадобится
