@@ -47,8 +47,9 @@ def main():
         except Exception:
             pass
 
-        # 2) список резюме
-        all_ids = s.resume_ids or api.get_my_resume_ids()
+        # 2) список резюме {id: title}
+        all_resumes = api.get_my_resumes()
+        all_ids = list(all_resumes.keys())
         if not all_ids:
             raise RuntimeError("У вас нет опубликованных резюме для обновления.")
 
@@ -60,15 +61,17 @@ def main():
         for shift in range(n):
             idx = (start_index + shift) % n
             resume_id = all_ids[idx]
+            title = all_resumes[resume_id]
+
             try:
                 api.publish_resume(resume_id)
-                msg = f"✅ Резюме поднято ({idx+1}/{n}): {resume_id}"
+                msg = f"✅ Резюме поднято ({idx+1}/{n}): {title}"
                 print(msg)
                 notifier.send(msg)
                 return 0
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 429:
-                    msg = f"⚠️ Резюме {resume_id} ещё нельзя поднимать (429)"
+                    msg = f"⚠️ Резюме «{title}» ещё нельзя поднимать (429)"
                     print(msg)
                     notifier.send(msg)
                     continue
