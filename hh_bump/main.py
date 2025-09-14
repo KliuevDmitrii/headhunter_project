@@ -20,7 +20,10 @@ def main():
         if not token:
             print("Нет сохранённого access_token — пробуем обновить через refresh_token")
             token = refresh_access_token(
-                s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
+                s.oauth_token_url,
+                s.client_id,
+                s.client_secret,
+                s.refresh_token
             )
 
         api = HHApi(s.api_base, token)
@@ -35,7 +38,10 @@ def main():
             if resp.status_code == 401:
                 print("access_token истёк — обновляем через refresh_token")
                 token = refresh_access_token(
-                    s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
+                    s.oauth_token_url,
+                    s.client_id,
+                    s.client_secret,
+                    s.refresh_token
                 )
                 api = HHApi(s.api_base, token)
         except Exception:
