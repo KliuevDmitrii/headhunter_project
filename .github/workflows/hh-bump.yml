@@ -18,6 +18,41 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Run carousel bump
+        id: bump
+        env:
+          HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
+          HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
+          HH_REFRESH_TOKEN: ${{ secrets.HH_REFRESH_TOKEN }}
+          HH_ACCESS_TOKEN: ${{ secrets.HH_ACCESS_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          python -m hh_bump.main > output.log 2>&1 || true
+          cat output.log
+          # если в логе есть "Все резюме пока на cooldown" → создаём флаг
+          if grep -q "Все резюме пока на cooldown" output.log; then
+            echo "cooldown=true" >> $GITHUB_OUTPUT
+          else
+            echo "cooldown=false" >> $GITHUB_OUTPUT
+          fi
+
+  rerun:
+    needs: bump
+    if: needs.bump.outputs.cooldown == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -r requirements.txt
+
+      - name: Wait 15 minutes before rerun
+        run: sleep 900  # 15 минут ожидания
+
+      - name: Run carousel bump (rerun)
         env:
           HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
           HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
