@@ -14,7 +14,12 @@ class HHApi:
         url = f"{self.api_base}/resumes/mine"
         r = requests.get(url, headers=self.headers, timeout=30)
         r.raise_for_status()
-        data = r.json()
+
+        try:
+            data = r.json()
+        except ValueError:
+            raise RuntimeError(f"Ошибка при получении списка резюме: {r.text[:200]}")
+
         return {
             item["id"]: item.get("title", "Без названия")
             for item in data.get("items", [])
@@ -23,8 +28,16 @@ class HHApi:
     def publish_resume(self, resume_id: str):
         """
         Поднять резюме (обновить дату публикации).
+        HH API может вернуть 204 No Content,
+        поэтому json() парсить не всегда нужно.
         """
         url = f"{self.api_base}/resumes/{resume_id}/publish"
         r = requests.post(url, headers=self.headers, timeout=30)
         r.raise_for_status()
-        return r.json()
+
+        if not r.text.strip():
+            return None  # Успех без тела
+        try:
+            return r.json()
+        except ValueError:
+            return {"raw_response": r.text[:200]}
