@@ -8,6 +8,8 @@ on:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    outputs:
+      cooldown: ${{ steps.setflag.outputs.cooldown }}
     steps:
       - uses: actions/checkout@v4
 
@@ -18,7 +20,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Run carousel bump
-        id: bump
+        id: runbump
         env:
           HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
           HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
@@ -29,7 +31,10 @@ jobs:
         run: |
           python -m hh_bump.main > output.log 2>&1 || true
           cat output.log
-          # если в логе есть "Все резюме пока на cooldown" → создаём флаг
+
+      - name: Set cooldown flag
+        id: setflag
+        run: |
           if grep -q "Все резюме пока на cooldown" output.log; then
             echo "cooldown=true" >> $GITHUB_OUTPUT
           else
@@ -50,7 +55,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Wait 15 minutes before rerun
-        run: sleep 900  # 15 минут ожидания
+        run: sleep 900
 
       - name: Run carousel bump (rerun)
         env:
