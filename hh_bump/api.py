@@ -56,16 +56,36 @@ class HHApi:
     def apply_to_vacancy(self, vacancy_id: str, resume_id: str, message: str | None = None):
         """
         Отправить отклик на вакансию с указанным резюме и опциональным сопроводительным письмом.
+        Работает через actions из вакансии, а не прямой POST.
         """
-        url = f"{self.api_base}/negotiations?vacancy_id={vacancy_id}"
+        # шаг 1 — получить детали вакансии
+        vacancy_url = f"{self.api_base}/vacancies/{vacancy_id}"
+        r = requests.get(vacancy_url, headers=self.headers, timeout=30)
+        r.raise_for_status()
+        vacancy = r.json()
+
+        # шаг 2 — проверить наличие actions.negotiations
+        actions = vacancy.get("actions", {})
+        negotiations = actions.get("negotiations")
+        if not negotiations:
+            raise RuntimeError(f"Для вакансии {vacancy_id} нет доступного отклика")
+
+        url = negotiations["url"]
+        method = negotiations.get("method", "POST").upper()
+
         payload = {"resume_id": resume_id}
         if message:
             payload["message"] = message
 
-        r = requests.post(url, headers=self.headers, json=payload, timeout=30)
+        if method == "POST":
+            r = requests.post(url, headers=self.headers, json=payload, timeout=30)
+        else:
+            raise RuntimeError(f"Неожиданный метод отклика: {method}")
+
         r.raise_for_status()
-        if not r.text.strip():   # бывает 204 No Content
+        if not r.text.strip():
             return {"status": "ok"}
         return r.json()
+
 
 
