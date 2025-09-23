@@ -55,15 +55,17 @@ class HHApi:
         
     def apply_to_vacancy(self, vacancy_id: str, resume_id: str, message: str | None = None):
         """
-        Отправить отклик на вакансию с опциональным сопроводительным письмом.
+        Отправить отклик на вакансию с указанным резюме и опциональным сопроводительным письмом.
         """
-        url = f"{self.api_base}/negotiations"
-        payload = {"vacancy_id": vacancy_id, "resume_id": resume_id}
+        url = f"{self.api_base}/negotiations?vacancy_id={vacancy_id}"
+        payload = {"resume_id": resume_id}
         if message:
             payload["message"] = message
+
         r = requests.post(url, headers=self.headers, json=payload, timeout=30)
         r.raise_for_status()
-        if not r.text.strip():
+        if not r.text.strip():   # бывает 204 No Content
             return {"status": "ok"}
         return r.json()
+
 
