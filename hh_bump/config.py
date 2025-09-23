@@ -51,6 +51,5 @@ class Settings:
         ]
         self.max_applications_per_run = apply.getint("max_applications_per_run", 10)
         self.sleep_between_applies = apply.getint("sleep_between_applies", 2)
-
-
-
+        self.max_searches_per_run = apply.getint("max_searches_per_run", 20)
+        

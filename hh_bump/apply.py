@@ -46,15 +46,27 @@ def main():
 
         applied_count = 0
         error_count = 0
+        search_count = 0
 
         for text in s.apply_texts:
             for area in s.apply_areas:
+                if search_count >= s.max_searches_per_run:
+                    print(f"⚠️ Достигнут лимит поисковых запросов ({s.max_searches_per_run}) за запуск")
+                    break
+
+                if applied_count >= s.max_applications_per_run:
+                    print(f"⚠️ Достигнут лимит откликов ({s.max_applications_per_run}) за запуск")
+                    break
+
+                search_count += 1
+
                 try:
                     vacancies = api.search_vacancies(
                         text=text,
                         area=area,
                         per_page=s.apply_per_page,
                     )
+                    time.sleep(1)  # пауза между поисковыми запросами
                 except Exception as e:
                     print(f"❌ Ошибка поиска вакансий: {e}")
                     error_count += 1
@@ -66,28 +78,18 @@ def main():
 
                 for v in vacancies:
                     if applied_count >= s.max_applications_per_run:
-                        msg = f"⚠️ Достигнут лимит откликов ({s.max_applications_per_run}) за запуск."
-                        print(msg)
-                        notifier.send(msg)
-                        # в этот момент отправим статистику по ошибкам
-                        if error_count > 0:
-                            notifier.send(f"⚠️ Ошибок при откликах: {error_count}")
-                        return 0
+                        break
 
                     vacancy_id = v["id"]
                     vacancy_name = v.get("name", "Без названия")
 
-                    # случайное резюме
                     resume_id = random.choice(list(all_resumes.keys()))
                     resume_title = all_resumes[resume_id]
-
-                    # случайное сопроводительное письмо
                     message = random.choice(letters) if letters else None
 
                     try:
                         result = api.apply_to_vacancy(vacancy_id, resume_id, message)
                         if result is None:
-                            print(f"⚠️ Вакансия «{vacancy_name}» ({vacancy_id}) не принимает отклики")
                             error_count += 1
                             continue
 
@@ -99,19 +101,17 @@ def main():
                         notifier.send(msg)
                         applied_count += 1
 
-                        # пауза
                         time.sleep(s.sleep_between_applies)
 
                     except Exception as e:
-                        print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
                         error_count += 1
+                        print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
 
         if applied_count == 0:
             msg = "⚠️ Подходящих вакансий для откликов не найдено."
             print(msg)
             notifier.send(msg)
 
-        # отправляем итог по ошибкам
         if error_count > 0:
             summary = f"⚠️ Ошибок при откликах: {error_count}"
             print(summary)
