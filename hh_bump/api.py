@@ -48,7 +48,7 @@ class HHApi:
         area=1 -> Москва, area=2 -> Санкт-Петербург и т.д.
         """
         url = f"{self.api_base}/vacancies"
-        params = {"text": text, "area": area, "per_page": per_page}
+        params = {"text": text, "area": area, "per_page": per_page, "only_with_response": True,}
         r = requests.get(url, headers=self.headers, params=params, timeout=30)
         r.raise_for_status()
         return r.json().get("items", [])

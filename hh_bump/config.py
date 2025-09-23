@@ -31,7 +31,7 @@ class Settings:
         # State file
         self.state_path = Path("state.json")
 
-        # Apply
+        # Apply (отклики)
         apply = self.config["apply"] if "apply" in self.config else {}
         self.apply_texts = [
             t.strip()
@@ -41,13 +41,16 @@ class Settings:
         self.apply_areas = [
             int(a.strip())
             for a in apply.get("areas", "").split(",")
-            if a.strip()
+            if a.strip().isdigit()
         ]
-        self.apply_per_page = int(apply.get("per_page", 5))
+        self.apply_per_page = apply.getint("per_page", 5)
         self.cover_letters = [
             c.strip()
             for c in apply.get("cover_letters", "").split(",")
             if c.strip()
         ]
+        self.max_applications_per_run = apply.getint("max_applications_per_run", 10)
+        self.sleep_between_applies = apply.getint("sleep_between_applies", 2)
+
 
 
