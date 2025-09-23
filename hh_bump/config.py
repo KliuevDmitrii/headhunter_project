@@ -32,10 +32,21 @@ class Settings:
         self.state_path = Path("state.json")
 
         # Apply
-        # Apply
+        apply = self.config["apply"] if "apply" in self.config else {}
+        self.apply_texts = [
+            t.strip()
+            for t in apply.get("search_texts", "").split(",")
+            if t.strip()
+        ]
+        self.apply_areas = [
+            int(a.strip())
+            for a in apply.get("areas", "").split(",")
+            if a.strip()
+        ]
+        self.apply_per_page = int(apply.get("per_page", 5))
         self.cover_letters = [
             c.strip()
-            for c in self.config.get("apply", "cover_letters", fallback="").split(",")
+            for c in apply.get("cover_letters", "").split(",")
             if c.strip()
         ]
 
