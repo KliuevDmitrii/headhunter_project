@@ -30,3 +30,13 @@ class Settings:
 
         # State file
         self.state_path = Path("state.json")
+
+        # Apply
+        # Apply
+        self.cover_letters = [
+            c.strip()
+            for c in self.config.get("apply", "cover_letters", fallback="").split(",")
+            if c.strip()
+        ]
+
+

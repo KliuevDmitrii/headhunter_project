@@ -41,3 +41,29 @@ class HHApi:
             return r.json()
         except ValueError:
             return {"raw_response": r.text[:200]}
+        
+    def search_vacancies(self, text: str, area: int = 1, per_page: int = 20) -> list[dict]:
+        """
+        Поиск вакансий по ключевым словам.
+        area=1 -> Москва, area=2 -> Санкт-Петербург и т.д.
+        """
+        url = f"{self.api_base}/vacancies"
+        params = {"text": text, "area": area, "per_page": per_page}
+        r = requests.get(url, headers=self.headers, params=params, timeout=30)
+        r.raise_for_status()
+        return r.json().get("items", [])
+        
+    def apply_to_vacancy(self, vacancy_id: str, resume_id: str, message: str | None = None):
+        """
+        Отправить отклик на вакансию с опциональным сопроводительным письмом.
+        """
+        url = f"{self.api_base}/negotiations"
+        payload = {"vacancy_id": vacancy_id, "resume_id": resume_id}
+        if message:
+            payload["message"] = message
+        r = requests.post(url, headers=self.headers, json=payload, timeout=30)
+        r.raise_for_status()
+        if not r.text.strip():
+            return {"status": "ok"}
+        return r.json()
+
