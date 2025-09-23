@@ -41,9 +41,9 @@ def main():
             "Software QA Engineer",
             "Software Quality Engineer",
             "Software Quality Assurance Engineer",
-            "Специалист по тестированию",
+            "Специалист по тестированию"
         ]
-        areas = [100, 113, 16, 28, 9]  # Россия, СНГ, Беларусь, Казахстан, Узбекистан
+        areas = [113, 28, 40, 16, 97, 100, 9, 3, 48]
 
         applied_count = 0
 
