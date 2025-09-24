@@ -32,25 +32,19 @@ class Settings:
         # State file
         self.state_path = Path("state.json")
 
-        # Apply (отклики)
-        apply = self.config["apply"] if "apply" in self.config else {}
-        self.apply_texts = [
-            t.strip()
-            for t in apply.get("search_texts", "").split(",")
-            if t.strip()
-        ]
-        self.apply_areas = [
-            int(a.strip())
-            for a in apply.get("areas", "").split(",")
-            if a.strip().isdigit()
-        ]
+        # Apply (отклики на вакансии)
+        apply = self.config["apply"]
+        raw_texts = apply.get("search_texts", "").strip()
+        self.apply_search_texts = [x.strip() for x in raw_texts.split(",") if x.strip()]
+
+        raw_areas = apply.get("areas", "").strip()
+        self.apply_areas = [int(x.strip()) for x in raw_areas.split(",") if x.strip()]
+
         self.apply_per_page = apply.getint("per_page", 5)
-        self.cover_letters = [
-            c.strip()
-            for c in apply.get("cover_letters", "").split(",")
-            if c.strip()
-        ]
         self.max_applications_per_run = apply.getint("max_applications_per_run", 10)
         self.sleep_between_applies = apply.getint("sleep_between_applies", 2)
-        self.max_searches_per_run = apply.getint("max_searches_per_run", 20)
+        self.max_searches_per_run = apply.getint("max_searches_per_run", 30)
+
+        raw_covers = apply.get("cover_letters", "").strip()
+        self.cover_letters = [x.strip() for x in raw_covers.split(",") if x.strip()]
         
