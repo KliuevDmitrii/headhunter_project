@@ -23,7 +23,6 @@ class Settings:
         self.client_id = os.environ["HH_CLIENT_ID"]
         self.client_secret = os.environ["HH_CLIENT_SECRET"]
         self.refresh_token = os.environ["HH_REFRESH_TOKEN"]
-        self.access_token = os.environ.get("HH_ACCESS_TOKEN")
 
 
         # Run
