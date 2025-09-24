@@ -12,8 +12,8 @@ def main():
     s = Settings()
     notifier = TelegramNotifier()
 
+    # ---------- получаем access_token ----------
     try:
-        # 1) пробуем использовать сохранённый access_token
         token = get_stored_access_token()
         if not token:
             print("Нет сохранённого access_token — пробуем обновить через refresh_token")
@@ -26,7 +26,7 @@ def main():
 
         api = HHApi(s.api_base, token)
 
-        # 2) проверка токена (жив ли)
+        # проверка токена
         try:
             resp = requests.get(
                 f"{s.api_base}/me",
@@ -51,7 +51,7 @@ def main():
         notifier.send(msg)
         return
 
-    # ---------- логика поиска и откликов ----------
+    # ---------- логика откликов ----------
     resumes = api.get_my_resumes()
     if not resumes:
         msg = "❌ У пользователя нет резюме."
@@ -65,6 +65,8 @@ def main():
     applied_vacancies = []
 
     for text in s.apply_search_texts:
+        print(f"\n🔍 Обработка ключа: «{text}»")  # явный лог ключа
+
         if searches_done >= s.max_searches_per_run:
             print(f"⚠️ Достигнут лимит поисковых запросов ({s.max_searches_per_run}) за запуск")
             break
@@ -78,11 +80,11 @@ def main():
             searches_done += 1
         except Exception as e:
             errors += 1
-            print(f"❌ Ошибка поиска: {e}")
+            print(f"❌ Ошибка поиска по ключу «{text}»: {e}")
             continue
 
         if not vacancies:
-            print(f"⚠️ Вакансии не найдены: «{text}» (регионы {','.join(map(str, s.apply_areas))})")
+            print(f"⚠️ Вакансии не найдены по ключу: «{text}» (регионы {','.join(map(str, s.apply_areas))})")
             continue
 
         for v in vacancies:
@@ -100,7 +102,6 @@ def main():
             try:
                 result = api.apply_to_vacancy(vacancy_id, resume_id, cover_letter)
                 if result is None:
-                    # Вакансия без доступного action или закрыта
                     print(f"⚠️ Пропуск: на «{vacancy_name}» нельзя откликнуться через API")
                     continue
 
@@ -122,8 +123,7 @@ def main():
                 errors += 1
                 print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
 
-
-    # ---------- Итог ----------
+    # ---------- итог ----------
     if applied_vacancies:
         summary = "📋 Итог по откликам:\n" + "\n".join(
             [f"- {name} ({emp})" for name, emp in applied_vacancies]
@@ -142,4 +142,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
