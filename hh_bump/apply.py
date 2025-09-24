@@ -97,12 +97,12 @@ def main():
                         print(f"✅ Отклик отправлен: «{vacancy_name}» ({employer})")
 
                         # пауза между откликами (чтобы не ловить 429)
-                        time.sleep(max(5, s.sleep_between_applies))
+                        time.sleep(max(3, s.sleep_between_applies))
                     except requests.HTTPError as e:
                         if e.response.status_code == 429:
                             rate_limit_hits += 1
-                            print("⚠️ Получен 429 Too Many Requests, спим 60 сек...")
-                            time.sleep(60)
+                            print("⚠️ Получен 429 Too Many Requests, спим 5 сек...")
+                            time.sleep(5)
                             continue
                         elif e.response.status_code == 404:
                             skipped += 1
