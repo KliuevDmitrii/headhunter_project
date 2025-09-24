@@ -2,7 +2,7 @@ name: HH Apply Jobs
 
 on:
   schedule:
-    - cron: "0 5,7,9,12,15 * * *"   # 09:00, 12:00, 15:00 MSK (UTC+3) = 06:00, 09:00, 12:00 UTC
+    - cron: "0 8,13 * * *" # 12:00 и 17:00 каждый день (UTC)
   workflow_dispatch:
 
 jobs:
