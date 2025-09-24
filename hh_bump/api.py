@@ -42,18 +42,15 @@ class HHApi:
         except ValueError:
             return {"raw_response": r.text[:200]}
         
-    def search_vacancies(
-        self, text: str, area: int = 1, per_page: int = 20, page: int = 0
-    ) -> list[dict]:
-        """
-        Поиск вакансий по ключевым словам.
-        """
+    def search_vacancies(self, text: str, area: int = 1, per_page: int = 20, page: int = 0) -> list[dict]:
         url = f"{self.api_base}/vacancies"
         params = {
             "text": text,
             "area": area,
             "per_page": per_page,
             "page": page,
+            "search_field": "name",   # только по названию
+            "period": 1,              # только за последние сутки
             "only_with_response": True,
         }
         r = requests.get(url, headers=self.headers, params=params, timeout=30)
@@ -61,9 +58,6 @@ class HHApi:
         return r.json().get("items", [])
 
     def apply_to_vacancy(self, vacancy_id: str, resume_id: str, message: str | None = None):
-        """
-        Отправить отклик на вакансию (если доступен action 'negotiations').
-        """
         vacancy_url = f"{self.api_base}/vacancies/{vacancy_id}"
         r = requests.get(vacancy_url, headers=self.headers, timeout=30)
         r.raise_for_status()

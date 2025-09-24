@@ -16,20 +16,13 @@ def main():
     try:
         token = get_stored_access_token()
         if not token:
-            token = refresh_access_token(
-                s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
-            )
+            token = refresh_access_token(s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token)
 
         api = HHApi(s.api_base, token)
 
-        # проверка токена
-        resp = requests.get(
-            f"{s.api_base}/me", headers={"Authorization": f"Bearer {token}"}, timeout=15
-        )
+        resp = requests.get(f"{s.api_base}/me", headers={"Authorization": f"Bearer {token}"}, timeout=15)
         if resp.status_code == 401:
-            token = refresh_access_token(
-                s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token
-            )
+            token = refresh_access_token(s.oauth_token_url, s.client_id, s.client_secret, s.refresh_token)
             api = HHApi(s.api_base, token)
     except Exception as e:
         msg = f"❌ Ошибка получения токена: {e}"
@@ -62,20 +55,16 @@ def main():
                     break
 
                 try:
-                    vacancies = api.search_vacancies(
-                        text=text,
-                        area=area,
-                        per_page=s.apply_per_page,
-                        page=page,
-                    )
+                    vacancies = api.search_vacancies(text=text, area=area, per_page=s.apply_per_page, page=page)
                     searches_done += 1
+                    time.sleep(s.sleep_between_searches)
                 except Exception as e:
                     errors += 1
                     print(f"❌ Ошибка поиска [{text}, area={area}, page={page}]: {e}")
                     continue
 
                 if not vacancies:
-                    break  # дальше страниц нет
+                    break
 
                 vacancies_seen += len(vacancies)
 
@@ -100,10 +89,7 @@ def main():
 
                         total_applied += 1
                         applied_vacancies.append((vacancy_name, employer))
-                        msg = f"✅ Отклик отправлен: «{vacancy_name}» ({employer})"
-                        print(msg)
-                        notifier.send(msg)
-
+                        print(f"✅ Отклик отправлен: «{vacancy_name}» ({employer})")
                         time.sleep(s.sleep_between_applies)
 
                     except requests.HTTPError as e:
@@ -117,13 +103,14 @@ def main():
                         errors += 1
                         print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
 
-    # --- итоги ---
-    summary_parts = []
-    summary_parts.append(f"🔎 Поисковых запросов выполнено: {searches_done}")
-    summary_parts.append(f"📑 Вакансий просмотрено: {vacancies_seen}")
-    summary_parts.append(f"✅ Успешных откликов: {total_applied}")
-    summary_parts.append(f"⚠️ Пропущено вакансий: {skipped}")
-    summary_parts.append(f"❌ Ошибок: {errors}")
+    # --- итоговый отчёт ---
+    summary_parts = [
+        f"🔎 Поисковых запросов: {searches_done}",
+        f"📑 Вакансий просмотрено: {vacancies_seen}",
+        f"✅ Успешных откликов: {total_applied}",
+        f"⚠️ Пропущено (без API/404): {skipped}",
+        f"❌ Ошибок: {errors}",
+    ]
 
     if applied_vacancies:
         summary_parts.append("\n📋 Отклики отправлены:")

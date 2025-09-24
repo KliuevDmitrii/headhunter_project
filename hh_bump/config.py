@@ -45,7 +45,8 @@ class Settings:
         self.apply_max_pages = apply.getint("max_pages", 1)
 
         self.max_applications_per_run = apply.getint("max_applications_per_run", 10)
-        self.sleep_between_applies = apply.getint("sleep_between_applies", 2)
+        self.sleep_between_applies = apply.getfloat("sleep_between_applies", 2.0)
+        self.sleep_between_searches = apply.getfloat("sleep_between_searches", 0.5)
         self.max_searches_per_run = apply.getint("max_searches_per_run", 30)
 
         raw_covers = apply.get("cover_letters", "").strip()
