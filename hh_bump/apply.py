@@ -100,6 +100,8 @@ def main():
             try:
                 result = api.apply_to_vacancy(vacancy_id, resume_id, cover_letter)
                 if result is None:
+                    # Вакансия без доступного action или закрыта
+                    print(f"⚠️ Пропуск: на «{vacancy_name}» нельзя откликнуться через API")
                     continue
 
                 total_applied += 1
@@ -109,9 +111,17 @@ def main():
                 notifier.send(msg)
 
                 time.sleep(s.sleep_between_applies)
+
+            except requests.HTTPError as e:
+                if e.response.status_code == 404:
+                    print(f"⚠️ Пропуск: вакансия {vacancy_id} недоступна (404)")
+                else:
+                    errors += 1
+                    print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
             except Exception as e:
                 errors += 1
                 print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
+
 
     # ---------- Итог ----------
     if applied_vacancies:
