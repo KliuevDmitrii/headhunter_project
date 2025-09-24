@@ -42,17 +42,27 @@ class HHApi:
         except ValueError:
             return {"raw_response": r.text[:200]}
         
-    def search_vacancies(self, text: str, area: int = 1, per_page: int = 20) -> list[dict]:
+    def search_vacancies(self, text: str, areas: list[int], per_page: int = 20) -> list[dict]:
         """
-        Поиск вакансий по ключевым словам.
-        area=1 -> Москва, area=2 -> Санкт-Петербург и т.д.
+        Поиск вакансий по ключевым словам сразу по нескольким регионам.
         """
         url = f"{self.api_base}/vacancies"
-        params = {"text": text, "area": area, "per_page": per_page, "only_with_response": True,}
+        params = {
+            "text": text,
+            "per_page": per_page,
+            "only_with_response": True,
+            "locale": "RU",
+            "host": "hh.ru",
+        }
+
+        # список регионов (API hh.ru принимает area[]=id)
+        for a in areas:
+            params.setdefault("area", []).append(a)
+
         r = requests.get(url, headers=self.headers, params=params, timeout=30)
         r.raise_for_status()
         return r.json().get("items", [])
-        
+
     def apply_to_vacancy(self, vacancy_id: str, resume_id: str, message: str | None = None):
         """
         Отправить отклик на вакансию с указанным резюме и опциональным сопроводительным письмом.
@@ -66,8 +76,7 @@ class HHApi:
         actions = vacancy.get("actions", {})
         negotiations = actions.get("negotiations")
         if not negotiations:
-            # вместо ошибки просто возвращаем None
-            return None  
+            return None
 
         url = negotiations["url"]
         method = negotiations.get("method", "POST").upper()

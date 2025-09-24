@@ -1,132 +1,94 @@
 import random
 import time
-from hh_bump.config import Settings
-from hh_bump.auth import get_stored_access_token, refresh_access_token, store_access_token
 from hh_bump.api import HHApi
-from .notifier import TelegramNotifier
-
-
-def load_cover_letters(paths: list[str]) -> list[str]:
-    """Загружает сопроводительные письма из файлов."""
-    letters = []
-    for path in paths:
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    letters.append(content)
-        except FileNotFoundError:
-            continue
-    return letters
+from hh_bump.config import Settings
+from hh_bump.notifier import TelegramNotifier
 
 
 def main():
     s = Settings()
+    api = HHApi(s.api_base, s.access_token)
     notifier = TelegramNotifier()
 
-    try:
-        # Авторизация
-        token = get_stored_access_token()
-        if not token:
-            token = refresh_access_token(s.client_id, s.client_secret, s.refresh_token)
-            store_access_token(token)
-
-        api = HHApi(s.api_base, token)
-
-        # Загружаем резюме
-        all_resumes = api.get_my_resumes()
-        if not all_resumes:
-            msg = "❌ Нет доступных резюме для откликов."
-            print(msg)
-            notifier.send(msg)
-            return 1
-
-        # Загружаем письма
-        letters = load_cover_letters(s.cover_letters)
-
-        applied_count = 0
-        error_count = 0
-        search_count = 0
-
-        for text in s.apply_texts:
-            for area in s.apply_areas:
-                if search_count >= s.max_searches_per_run:
-                    print(f"⚠️ Достигнут лимит поисковых запросов ({s.max_searches_per_run}) за запуск")
-                    break
-
-                if applied_count >= s.max_applications_per_run:
-                    print(f"⚠️ Достигнут лимит откликов ({s.max_applications_per_run}) за запуск")
-                    break
-
-                search_count += 1
-
-                try:
-                    vacancies = api.search_vacancies(
-                        text=text,
-                        area=area,
-                        per_page=s.apply_per_page,
-                    )
-                    time.sleep(1)  # пауза между поисковыми запросами
-                except Exception as e:
-                    print(f"❌ Ошибка поиска вакансий: {e}")
-                    error_count += 1
-                    continue
-
-                if not vacancies:
-                    print(f"⚠️ Вакансии не найдены: «{text}» (регион {area})")
-                    continue
-
-                for v in vacancies:
-                    if applied_count >= s.max_applications_per_run:
-                        break
-
-                    vacancy_id = v["id"]
-                    vacancy_name = v.get("name", "Без названия")
-
-                    resume_id = random.choice(list(all_resumes.keys()))
-                    resume_title = all_resumes[resume_id]
-                    message = random.choice(letters) if letters else None
-
-                    try:
-                        result = api.apply_to_vacancy(vacancy_id, resume_id, message)
-                        if result is None:
-                            error_count += 1
-                            continue
-
-                        msg = (
-                            f"✅ Отклик отправлен: резюме «{resume_title}» "
-                            f"→ вакансия «{vacancy_name}» (регион {area}, письмо: {'да' if message else 'нет'})"
-                        )
-                        print(msg)
-                        notifier.send(msg)
-                        applied_count += 1
-
-                        time.sleep(s.sleep_between_applies)
-
-                    except Exception as e:
-                        error_count += 1
-                        print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
-
-        if applied_count == 0:
-            msg = "⚠️ Подходящих вакансий для откликов не найдено."
-            print(msg)
-            notifier.send(msg)
-
-        if error_count > 0:
-            summary = f"⚠️ Ошибок при откликах: {error_count}"
-            print(summary)
-            notifier.send(summary)
-
-        return 0
-
-    except Exception as e:
-        msg = f"❌ Ошибка выполнения apply.py: {e}"
+    resumes = api.get_my_resumes()
+    if not resumes:
+        msg = "❌ У пользователя нет резюме."
         print(msg)
         notifier.send(msg)
-        return 1
+        return
+
+    total_applied = 0
+    errors = 0
+    searches_done = 0
+    applied_vacancies = []  # для отчёта
+
+    for text in s.apply_search_texts:
+        if searches_done >= s.max_searches_per_run:
+            print(f"⚠️ Достигнут лимит поисковых запросов ({s.max_searches_per_run}) за запуск")
+            break
+
+        try:
+            vacancies = api.search_vacancies(
+                text=text,
+                areas=s.apply_areas,
+                per_page=s.apply_per_page,
+            )
+            searches_done += 1
+        except Exception as e:
+            errors += 1
+            print(f"❌ Ошибка поиска: {e}")
+            continue
+
+        if not vacancies:
+            print(f"⚠️ Вакансии не найдены: «{text}» (регионы {','.join(map(str, s.apply_areas))})")
+            continue
+
+        for v in vacancies:
+            if total_applied >= s.max_applications_per_run:
+                print(f"⏹ Достигнут лимит откликов ({s.max_applications_per_run}) за запуск")
+                break
+
+            vacancy_id = v["id"]
+            vacancy_name = v.get("name", "Без названия")
+            employer = v.get("employer", {}).get("name", "")
+
+            resume_id = random.choice(s.resume_ids)
+            cover_letter = random.choice(s.cover_letters) if s.cover_letters else None
+
+            try:
+                result = api.apply_to_vacancy(vacancy_id, resume_id, cover_letter)
+                if result is None:
+                    # вакансии без доступного action
+                    continue
+
+                total_applied += 1
+                applied_vacancies.append((vacancy_name, employer))
+                msg = f"✅ Отклик отправлен: «{vacancy_name}» ({employer})"
+                print(msg)
+                notifier.send(msg)
+
+                time.sleep(s.sleep_between_applies)
+            except Exception as e:
+                errors += 1
+                print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
+
+    # Итоговый отчёт
+    if applied_vacancies:
+        summary = "📋 Итог по откликам:\n" + "\n".join(
+            [f"- {name} ({emp})" for name, emp in applied_vacancies]
+        )
+        notifier.send(summary)
+    else:
+        msg = "⚠️ Подходящих вакансий для откликов не найдено."
+        print(msg)
+        notifier.send(msg)
+
+    if errors:
+        msg = f"⚠️ Ошибок при откликах: {errors}"
+        print(msg)
+        notifier.send(msg)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-
+    main()
 
