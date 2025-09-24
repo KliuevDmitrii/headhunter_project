@@ -3,21 +3,35 @@ import time
 from hh_bump.api import HHApi
 from hh_bump.config import Settings
 from hh_bump.notifier import TelegramNotifier
-from hh_bump.auth import refresh_access_token
+from hh_bump.auth import refresh_access_token, get_stored_access_token
 
 
 def main():
     s = Settings()
     notifier = TelegramNotifier()
 
-    # Получаем свежий access_token через refresh
+    # Получаем access_token через refresh_token
     try:
-        access_token = refresh_access_token(s.client_id, s.client_secret, s.refresh_token)
+        access_token = refresh_access_token(
+            s.oauth_token_url,
+            s.client_id,
+            s.client_secret,
+            s.refresh_token,
+        )
     except Exception as e:
         msg = f"❌ Ошибка обновления токена: {e}"
         print(msg)
         notifier.send(msg)
         return
+
+    if not access_token:
+        # fallback: пробуем взять сохранённый
+        access_token = get_stored_access_token()
+        if not access_token:
+            msg = "❌ Не удалось получить access_token"
+            print(msg)
+            notifier.send(msg)
+            return
 
     api = HHApi(s.api_base, access_token)
 
@@ -31,7 +45,7 @@ def main():
     total_applied = 0
     errors = 0
     searches_done = 0
-    applied_vacancies = []  # для итогового отчёта
+    applied_vacancies = []  # для отчёта
 
     for text in s.apply_search_texts:
         if searches_done >= s.max_searches_per_run:
