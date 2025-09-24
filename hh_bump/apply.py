@@ -3,12 +3,23 @@ import time
 from hh_bump.api import HHApi
 from hh_bump.config import Settings
 from hh_bump.notifier import TelegramNotifier
+from hh_bump.auth import refresh_access_token
 
 
 def main():
     s = Settings()
-    api = HHApi(s.api_base, s.access_token)
     notifier = TelegramNotifier()
+
+    # Получаем свежий access_token через refresh
+    try:
+        access_token = refresh_access_token(s.client_id, s.client_secret, s.refresh_token)
+    except Exception as e:
+        msg = f"❌ Ошибка обновления токена: {e}"
+        print(msg)
+        notifier.send(msg)
+        return
+
+    api = HHApi(s.api_base, access_token)
 
     resumes = api.get_my_resumes()
     if not resumes:
@@ -20,7 +31,7 @@ def main():
     total_applied = 0
     errors = 0
     searches_done = 0
-    applied_vacancies = []  # для отчёта
+    applied_vacancies = []  # для итогового отчёта
 
     for text in s.apply_search_texts:
         if searches_done >= s.max_searches_per_run:
@@ -91,4 +102,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
