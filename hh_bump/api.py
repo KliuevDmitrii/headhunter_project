@@ -42,31 +42,27 @@ class HHApi:
         except ValueError:
             return {"raw_response": r.text[:200]}
         
-    def search_vacancies(self, text: str, areas: list[int], per_page: int = 20) -> list[dict]:
+    def search_vacancies(
+        self, text: str, area: int = 1, per_page: int = 20, page: int = 0
+    ) -> list[dict]:
         """
-        Поиск вакансий по ключевым словам сразу по нескольким регионам.
+        Поиск вакансий по ключевым словам.
         """
         url = f"{self.api_base}/vacancies"
         params = {
             "text": text,
+            "area": area,
             "per_page": per_page,
+            "page": page,
             "only_with_response": True,
-            "locale": "RU",
-            "host": "hh.ru",
         }
-
-        # список регионов (API hh.ru принимает area[]=id)
-        for a in areas:
-            params.setdefault("area", []).append(a)
-
         r = requests.get(url, headers=self.headers, params=params, timeout=30)
         r.raise_for_status()
         return r.json().get("items", [])
 
     def apply_to_vacancy(self, vacancy_id: str, resume_id: str, message: str | None = None):
         """
-        Отправить отклик на вакансию с указанным резюме и опциональным сопроводительным письмом.
-        Работает только если у вакансии есть доступный action 'negotiations'.
+        Отправить отклик на вакансию (если доступен action 'negotiations').
         """
         vacancy_url = f"{self.api_base}/vacancies/{vacancy_id}"
         r = requests.get(vacancy_url, headers=self.headers, timeout=30)
@@ -79,18 +75,10 @@ class HHApi:
             return None
 
         url = negotiations["url"]
-        method = negotiations.get("method", "POST").upper()
-
         payload = {"resume_id": resume_id}
         if message:
             payload["message"] = message
 
-        if method == "POST":
-            r = requests.post(url, headers=self.headers, json=payload, timeout=30)
-        else:
-            raise RuntimeError(f"Неожиданный метод отклика: {method}")
-
+        r = requests.post(url, headers=self.headers, json=payload, timeout=30)
         r.raise_for_status()
-        if not r.text.strip():
-            return {"status": "ok"}
-        return r.json()
+        return r.json() if r.text.strip() else {"status": "ok"}
