@@ -1,40 +1,57 @@
 import random
 import time
+import requests
+
 from hh_bump.api import HHApi
 from hh_bump.config import Settings
 from hh_bump.notifier import TelegramNotifier
-from hh_bump.auth import refresh_access_token, get_stored_access_token
+from hh_bump.auth import get_stored_access_token, refresh_access_token
 
 
 def main():
     s = Settings()
     notifier = TelegramNotifier()
 
-    # Получаем access_token через refresh_token
     try:
-        access_token = refresh_access_token(
-            s.oauth_token_url,
-            s.client_id,
-            s.client_secret,
-            s.refresh_token,
-        )
+        # 1) пробуем использовать сохранённый access_token
+        token = get_stored_access_token()
+        if not token:
+            print("Нет сохранённого access_token — пробуем обновить через refresh_token")
+            token = refresh_access_token(
+                s.oauth_token_url,
+                s.client_id,
+                s.client_secret,
+                s.refresh_token,
+            )
+
+        api = HHApi(s.api_base, token)
+
+        # 2) проверка токена (жив ли)
+        try:
+            resp = requests.get(
+                f"{s.api_base}/me",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15,
+            )
+            if resp.status_code == 401:
+                print("access_token истёк — обновляем через refresh_token")
+                token = refresh_access_token(
+                    s.oauth_token_url,
+                    s.client_id,
+                    s.client_secret,
+                    s.refresh_token,
+                )
+                api = HHApi(s.api_base, token)
+        except Exception:
+            pass
+
     except Exception as e:
-        msg = f"❌ Ошибка обновления токена: {e}"
+        msg = f"❌ Ошибка получения токена: {e}"
         print(msg)
         notifier.send(msg)
         return
 
-    if not access_token:
-        # fallback: пробуем взять сохранённый
-        access_token = get_stored_access_token()
-        if not access_token:
-            msg = "❌ Не удалось получить access_token"
-            print(msg)
-            notifier.send(msg)
-            return
-
-    api = HHApi(s.api_base, access_token)
-
+    # ---------- логика поиска и откликов ----------
     resumes = api.get_my_resumes()
     if not resumes:
         msg = "❌ У пользователя нет резюме."
@@ -45,7 +62,7 @@ def main():
     total_applied = 0
     errors = 0
     searches_done = 0
-    applied_vacancies = []  # для отчёта
+    applied_vacancies = []
 
     for text in s.apply_search_texts:
         if searches_done >= s.max_searches_per_run:
@@ -83,7 +100,6 @@ def main():
             try:
                 result = api.apply_to_vacancy(vacancy_id, resume_id, cover_letter)
                 if result is None:
-                    # вакансии без доступного action
                     continue
 
                 total_applied += 1
@@ -97,7 +113,7 @@ def main():
                 errors += 1
                 print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
 
-    # Итоговый отчёт
+    # ---------- Итог ----------
     if applied_vacancies:
         summary = "📋 Итог по откликам:\n" + "\n".join(
             [f"- {name} ({emp})" for name, emp in applied_vacancies]
@@ -116,3 +132,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
