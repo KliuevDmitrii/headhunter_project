@@ -50,11 +50,12 @@ class HHApi:
         """
         url = f"{self.api_base}/vacancies"
         params = {
-            "text": text,
-            "area": area,
-            "per_page": per_page,
-            "page": page,
-            "only_with_response": True,
+        "text": text,
+        "area": area,
+        "per_page": per_page,
+        "page": page,
+        "search_field": "name",   # искать по названию вакансии
+        "period": 1             # вакансии только за последние сутки
         }
         r = requests.get(url, headers=self.headers, params=params, timeout=30)
         r.raise_for_status()
@@ -72,9 +73,14 @@ class HHApi:
         actions = vacancy.get("actions", {})
         negotiations = actions.get("negotiations")
         if not negotiations:
-            return None
+            return None  # нельзя откликнуться через API
 
+        method = negotiations.get("method", "POST").upper()
         url = negotiations["url"]
+
+        if method != "POST":
+            raise RuntimeError(f"Неожиданный метод отклика: {method}")
+
         payload = {"resume_id": resume_id}
         if message:
             payload["message"] = message
