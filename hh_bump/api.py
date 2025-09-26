@@ -55,7 +55,7 @@ class HHApi:
         "per_page": per_page,
         "page": page,
         "search_field": "name",   # искать по названию вакансии
-        "period": 1             # вакансии только за последние сутки
+        "period": 2             # вакансии только за последние 2 суток
         }
         r = requests.get(url, headers=self.headers, params=params, timeout=30)
         r.raise_for_status()
