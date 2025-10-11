@@ -1,6 +1,9 @@
 import random
 import time
 import requests
+import csv
+from datetime import datetime
+from pathlib import Path
 
 from hh_bump.api import HHApi
 from hh_bump.config import Settings
@@ -51,7 +54,9 @@ def main():
     searches_done = 0
     vacancies_seen = 0
     applied_vacancies = []
+    all_vacancies_log = []
 
+    # --- основной цикл поиска и откликов ---
     for text in s.apply_search_texts:
         print(f"\n🔍 Обработка ключа: «{text}»")
 
@@ -75,18 +80,22 @@ def main():
                     continue
 
                 if not vacancies:
-                    break  # дальше страниц нет
+                    break
 
                 vacancies_seen += len(vacancies)
 
                 for v in vacancies:
-                    if total_applied >= s.max_applications_per_run:
-                        print(f"⏹ Достигнут лимит откликов ({s.max_applications_per_run})")
-                        break
-
                     vacancy_id = v["id"]
                     vacancy_name = v.get("name", "Без названия")
                     employer = v.get("employer", {}).get("name", "")
+                    vacancy_url = f"https://hh.ru/vacancy/{vacancy_id}"
+
+                    status = "не обработана"
+                    all_vacancies_log.append([vacancy_name, employer, vacancy_url, text, area, status])
+
+                    if total_applied >= s.max_applications_per_run:
+                        print(f"⏹ Достигнут лимит откликов ({s.max_applications_per_run})")
+                        break
 
                     resume_id = random.choice(s.resume_ids)
                     cover_letter = random.choice(s.cover_letters) if s.cover_letters else None
@@ -95,35 +104,63 @@ def main():
                         result = api.apply_to_vacancy(vacancy_id, resume_id, cover_letter)
                         if result is None:
                             skipped += 1
+                            status = "нельзя откликнуться через API"
                             print(f"⚠️ Пропуск: на «{vacancy_name}» нельзя откликнуться через API")
                             continue
 
                         total_applied += 1
+                        status = "отклик отправлен"
                         applied_vacancies.append((vacancy_name, employer))
-                        msg = f"✅ Отклик отправлен: «{vacancy_name}» ({employer})"
-                        print(msg)
-                        notifier.send(msg)
+                        print(f"✅ Отклик отправлен: «{vacancy_name}» ({employer})")
 
                         time.sleep(s.sleep_between_applies)
 
                     except requests.HTTPError as e:
                         if e.response.status_code == 404:
                             skipped += 1
+                            status = "вакансия недоступна (404)"
                             print(f"⚠️ Пропуск: вакансия {vacancy_id} недоступна (404)")
                         else:
                             errors += 1
+                            status = f"ошибка HTTP {e.response.status_code}"
                             print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
                     except Exception as e:
                         errors += 1
+                        status = f"ошибка {type(e).__name__}"
                         print(f"❌ Ошибка отклика на «{vacancy_name}»: {e}")
 
-    # --- итоги ---
-    summary_parts = []
-    summary_parts.append(f"🔎 Поисковых запросов выполнено: {searches_done}")
-    summary_parts.append(f"📑 Вакансий просмотрено: {vacancies_seen}")
-    summary_parts.append(f"✅ Успешных откликов: {total_applied}")
-    summary_parts.append(f"⚠️ Пропущено вакансий: {skipped}")
-    summary_parts.append(f"❌ Ошибок: {errors}")
+                    all_vacancies_log[-1][-1] = status
+
+    # --- сохраняем CSV ---
+    try:
+        out_dir = Path("hh_bump/logs")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = out_dir / "found_vacancies.csv"
+
+        # 🧹 удаляем старый файл, если есть
+        if csv_path.exists():
+            csv_path.unlink()
+
+        # 💾 создаём новый CSV
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Название", "Компания", "Ссылка", "Ключ", "Регион", "Статус"])
+            writer.writerows(all_vacancies_log)
+
+        print(f"💾 Вакансии сохранены в {csv_path}")
+        notifier.send_file(csv_path, caption="💾 Отчёт по найденным вакансиям (автоотклики)")
+
+    except Exception as e:
+        print(f"⚠️ Ошибка при сохранении/отправке CSV: {e}")
+
+    # --- итог ---
+    summary_parts = [
+        f"🔎 Поисковых запросов: {searches_done}",
+        f"📑 Вакансий просмотрено: {vacancies_seen}",
+        f"✅ Успешных откликов: {total_applied}",
+        f"⚠️ Пропущено вакансий: {skipped}",
+        f"❌ Ошибок: {errors}",
+    ]
 
     if applied_vacancies:
         summary_parts.append("\n📋 Отклики отправлены:")
@@ -136,3 +173,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
