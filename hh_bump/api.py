@@ -57,9 +57,9 @@ class HHApi:
         """
         Отправить отклик на вакансию.
         1️⃣ Если есть 'actions.negotiations' → обычный API.
-        2️⃣ Если нет — пытаемся откликнуться через popup fallback.
+        2️⃣ Если нет — пытаемся откликнуться через popup (в том числе при отклике на вакансии в другой стране).
         """
-        # --- пробуем стандартный отклик ---
+        # --- стандартный API-отклик ---
         vacancy_url = f"{self.api_base}/vacancies/{vacancy_id}"
         r = requests.get(vacancy_url, headers=self.headers, timeout=30)
         r.raise_for_status()
@@ -82,42 +82,44 @@ class HHApi:
             r.raise_for_status()
             return r.json() if r.text.strip() else {"status": "ok"}
 
-        # --- fallback: popup /applicant/vacancy_response ---
-        popup_url = f"https://hh.ru/applicant/vacancy_response/popup"
-        params = {"vacancyId": vacancy_id}
+        # --- fallback через popup ---
+        popup_url = "https://hh.ru/applicant/vacancy_response/popup"
+        params = {
+            "vacancyId": vacancy_id,
+            "isTest": "no",
+            "withoutTest": "no",
+            "lux": "true",
+            "alreadyApplied": "false"
+        }
         popup_resp = requests.get(popup_url, headers=self.headers, params=params, timeout=30)
-
         if popup_resp.status_code != 200:
-            return None  # fallback не сработал
+            return None
 
         try:
             popup_json = popup_resp.json()
         except ValueError:
             return None
 
-        # если popup разрешает отклик
-        resp_status = popup_json.get("responseStatus", {})
-        allowed = popup_json.get("responsePopup") or {}
-        allowed_flag = (
-            popup_json.get("responseImpossible") is False
-            and popup_json.get("relocationWarning", {}).get("show") is not True
-        )
-
-        if not allowed_flag:
+        # Проверяем можно ли откликнуться
+        if popup_json.get("responseImpossible") is True:
             return None
 
-        # финальный отклик через popup API
-        resp_url = "https://hh.ru/applicant/vacancy_response"
+        # --- выполняем POST отклик ---
+        apply_url = "https://hh.ru/applicant/vacancy_response"
         payload = {
             "vacancy_id": vacancy_id,
             "resume_hash": resume_id,
             "hhtmFrom": "vacancy_search_list",
+            "lux": "true",
+            "isTest": "no",
+            "withoutTest": "no",
+            "alreadyApplied": "false",
         }
         if message:
             payload["letter"] = message
 
-        post_resp = requests.post(resp_url, headers=self.headers, data=payload, timeout=30)
-        if post_resp.status_code in (200, 201, 204):
-            return {"status": "ok", "via": "popup"}
+        resp = requests.post(apply_url, headers=self.headers, data=payload, timeout=30)
+        if resp.status_code in (200, 201, 204):
+            return {"status": "ok", "via": "popup-force"}
 
         return None
