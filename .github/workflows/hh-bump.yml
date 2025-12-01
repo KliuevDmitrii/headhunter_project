@@ -54,8 +54,8 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Wait 15 minutes before rerun
-        run: sleep 900
+      - name: Wait 25 minutes before rerun
+        run: sleep 1500
 
       - name: Run carousel bump (rerun)
         env:
