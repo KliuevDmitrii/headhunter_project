@@ -80,7 +80,11 @@ def main():
     )
 
     print(msg)
-    notifier.send(msg, file_path=output_file)
+    notifier.send_file(
+        caption=msg,
+        file_path=str(output_file),
+    )
+
 
 
 if __name__ == "__main__":

@@ -1,33 +1,44 @@
 import os
 import requests
-from pathlib import Path
+
 
 class TelegramNotifier:
     def __init__(self):
         self.token = os.getenv("TG_BOT_TOKEN")
         self.chat_id = os.getenv("TG_CHAT_ID")
 
+        if not self.token or not self.chat_id:
+            raise RuntimeError("Не заданы TG_BOT_TOKEN или TG_CHAT_ID")
+
+        self.base_url = f"https://api.telegram.org/bot{self.token}"
+
     def send(self, text: str):
-        if not self.token or not self.chat_id:
-            return
+        """
+        Отправка текстового сообщения
+        """
+        url = f"{self.base_url}/sendMessage"
+        payload = {
+            "chat_id": self.chat_id,
+            "text": text,
+        }
 
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        requests.post(
-            url,
-            json={"chat_id": self.chat_id, "text": text},
-            timeout=20,
-        )
+        r = requests.post(url, json=payload, timeout=20)
+        r.raise_for_status()
 
-    def send_file(self, file_path: str, caption: str | None = None):
-        if not self.token or not self.chat_id:
-            return
+    def send_file(self, caption: str, file_path: str):
+        """
+        Отправка файла с подписью
+        """
+        url = f"{self.base_url}/sendDocument"
 
-        url = f"https://api.telegram.org/bot{self.token}/sendDocument"
         with open(file_path, "rb") as f:
             files = {"document": f}
-            data = {"chat_id": self.chat_id}
-            if caption:
-                data["caption"] = caption
+            data = {
+                "chat_id": self.chat_id,
+                "caption": caption,
+            }
 
-            requests.post(url, files=files, data=data, timeout=60)
+            r = requests.post(url, data=data, files=files, timeout=60)
+            r.raise_for_status()
+
 
