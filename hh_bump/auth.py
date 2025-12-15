@@ -2,6 +2,7 @@ import os
 import requests
 import json
 from pathlib import Path
+from hh_bump.config import Settings
 
 STATE_FILE = Path("state.json")
 
@@ -52,4 +53,37 @@ def refresh_access_token(
     r.raise_for_status()
     token = r.json()["access_token"]
     store_access_token(token)
+    return token
+
+def get_valid_access_token() -> str:
+    """
+    Возвращает рабочий access_token.
+    Если текущий истёк или отсутствует — обновляет через refresh_token.
+    """
+    s = Settings()
+
+    token = get_stored_access_token()
+
+    if token:
+        # проверяем токен через /me
+        resp = requests.get(
+            f"{s.api_base}/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return token
+
+        if resp.status_code != 401:
+            # 403 и прочее — считаем токен битым
+            token = None
+
+    # если токена нет или он протух
+    token = refresh_access_token(
+        s.oauth_token_url,
+        s.client_id,
+        s.client_secret,
+        s.refresh_token,
+    )
+
     return token
