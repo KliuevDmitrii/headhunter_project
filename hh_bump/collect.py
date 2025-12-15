@@ -1,32 +1,10 @@
 import csv
-import requests
 from pathlib import Path
-from datetime import datetime, timezone
 
-from hh_bump.config import Settings
-from hh_bump.auth import get_valid_access_token
 from hh_bump.api import HHApi
+from hh_bump.auth import get_valid_access_token
+from hh_bump.config import Settings
 from hh_bump.notifier import TelegramNotifier
-
-
-CSV_FIELDS = [
-    "vacancy_id",
-    "name",
-    "company",
-    "area",
-    "url",
-    "published_at",
-]
-
-
-def save_csv(path: Path, vacancies: list[dict]):
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-        writer.writeheader()
-        for v in vacancies:
-            writer.writerow(v)
 
 
 def main():
@@ -40,78 +18,73 @@ def main():
         msg = f"❌ Ошибка токена: {e}"
         print(msg)
         notifier.send(msg)
-        return 1
+        return
 
     output_file = Path(s.vacancies_output_file)
-    all_vacancies: list[dict] = []
-
+    vacancies = []
     searches_done = 0
 
-    for text in s.apply_search_texts:
-        for area in s.apply_areas:
-            page = 0
+    for text in s.search_texts:
+        print(f"\n🔍 Поиск по ключу: «{text}»")
 
-            while page < s.apply_max_pages:
-                if searches_done >= s.apply_max_searches_per_run:
-                    print("⛔ Достигнут лимит запросов за запуск")
+        for area in s.areas:
+            for page in range(s.max_pages):
+                if searches_done >= s.max_searches_per_run:
+                    print("⚠️ Достигнут лимит поисковых запросов")
                     break
-
-                print(
-                    f"🔍 Поиск: text='{text}', area={area}, page={page}"
-                )
 
                 try:
                     items = api.search_vacancies(
                         text=text,
                         area=area,
+                        per_page=s.per_page,
                         page=page,
-                        per_page=s.apply_per_page,
                     )
+                    searches_done += 1
                 except Exception as e:
-                    print(f"❌ Ошибка поиска: {e}")
-                    break
-
-                print(f"   ↳ найдено: {len(items)} вакансий")
+                    print(f"❌ Ошибка поиска [{text}, area={area}, page={page}]: {e}")
+                    continue
 
                 if not items:
                     break
 
                 for v in items:
-                    all_vacancies.append(
-                        {
-                            "vacancy_id": v["id"],
-                            "name": v["name"],
-                            "company": v.get("employer", {}).get("name"),
-                            "area": v.get("area", {}).get("name"),
-                            "url": v.get("alternate_url"),
-                            "published_at": v.get("published_at"),
-                        }
-                    )
+                    vacancies.append({
+                        "vacancy_id": v.get("id"),
+                        "name": v.get("name"),
+                        "employer": v.get("employer", {}).get("name"),
+                        "area": v.get("area", {}).get("name"),
+                        "url": v.get("alternate_url"),
+                    })
 
-                searches_done += 1
-                page += 1
-
-    # CSV создаётся ВСЕГДА
-    save_csv(output_file, all_vacancies)
-
-    if not all_vacancies:
-        msg = "⚠️ Вакансии не найдены. CSV создан, но он пуст."
+    if not vacancies:
+        msg = "⚠️ Вакансии не найдены, CSV не создан."
         print(msg)
         notifier.send(msg)
-        return 0
+        return
+
+    # перезаписываем файл каждый запуск
+    with output_file.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["vacancy_id", "name", "employer", "area", "url"]
+        )
+        writer.writeheader()
+        writer.writerows(vacancies)
 
     msg = (
-        f"✅ Сбор завершён\n"
-        f"Найдено вакансий: {len(all_vacancies)}\n"
-        f"Файл: {output_file.name}"
+        f"📄 Сбор вакансий завершён\n"
+        f"🔎 Поисковых запросов: {searches_done}\n"
+        f"📑 Найдено вакансий: {len(vacancies)}\n"
+        f"📎 Файл: {output_file.name}"
     )
-    print(msg)
-    notifier.send_with_file(msg, output_file)
 
-    return 0
+    print(msg)
+    notifier.send(msg, file_path=output_file)
 
 
 if __name__ == "__main__":
     main()
+
 
 
