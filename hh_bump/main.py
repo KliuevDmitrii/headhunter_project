@@ -11,16 +11,17 @@ def main():
     s = Settings()
     notifier = TelegramNotifier()
 
+    # --- токен ---
     try:
         token = get_stored_access_token()
 
         if token:
-            r = requests.get(
+            resp = requests.get(
                 f"{s.api_base}/me",
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=15,
             )
-            if r.status_code == 401:
+            if resp.status_code == 401:
                 token = None
 
         if not token:
@@ -37,40 +38,46 @@ def main():
         notifier.send(f"❌ Ошибка токена: {e}")
         return
 
-    resume_ids = s.resume_ids
-    n = len(resume_ids)
-
-    if n == 0:
-        notifier.send("❌ Нет resume_ids в config.ini")
+    # --- получаем резюме ---
+    try:
+        resumes = api.get_my_resumes()
+    except Exception as e:
+        notifier.send(f"❌ Ошибка получения резюме: {e}")
         return
 
-    # ⚙️ выбор резюме по времени (round-robin)
-    hour = datetime.now(timezone.utc).hour
-    start_index = hour % n
+    if not resumes:
+        notifier.send("❌ Нет резюме для поднятия")
+        return
+
+    resume_ids = list(resumes.keys())
+    n = len(resume_ids)
+
+    # 👇 ВАЖНО: вращение, как раньше
+    start_index = datetime.now(timezone.utc).hour % n
 
     for shift in range(n):
         idx = (start_index + shift) % n
         resume_id = resume_ids[idx]
+        title = resumes[resume_id]
 
         try:
             api.publish_resume(resume_id)
-            msg = f"✅ Резюме поднято ({idx+1}/{n})"
+            msg = f"✅ Резюме поднято ({idx + 1}/{n}): {title}"
             print(msg)
             notifier.send(msg)
             return
 
-        except requests.exceptions.HTTPError as e:
-            if e.response is not None:
-                if e.response.status_code == 429:
-                    print(f"⏱️ cooldown для resume {resume_id}")
-                    continue
-                if e.response.status_code == 403:
-                    print(f"🚫 недоступно resume {resume_id}")
-                    continue
-            raise
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 429:
+                print(f"⏳ cooldown: {title}")
+                continue
 
-    notifier.send("⚠️ Все резюме пока на cooldown или недоступны")
+            notifier.send(f"❌ Ошибка при поднятии {title}: {e}")
+            return
+
+    notifier.send("⚠️ Все резюме сейчас на cooldown")
 
 
 if __name__ == "__main__":
     main()
+
