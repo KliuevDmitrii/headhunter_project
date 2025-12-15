@@ -1,13 +1,14 @@
-name: HH Apply Jobs
+name: HH Collect Vacancies
 
 on:
   schedule:
-    - cron: "0 8,13 * * *" # 12:00 и 17:00 каждый день (UTC)
+    - cron: "0 13 * * *"   # 17:00 Tbilisi (UTC+4)
   workflow_dispatch:
 
 jobs:
-  apply:
+  collect:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -15,9 +16,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Run apply jobs
+      - name: Collect vacancies
         env:
           HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
           HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
@@ -25,4 +27,5 @@ jobs:
           HH_ACCESS_TOKEN: ${{ secrets.HH_ACCESS_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python -m hh_bump.apply
+        run: |
+          python -m hh_bump.collect
