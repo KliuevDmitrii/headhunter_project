@@ -14,4 +14,3 @@ class HHApi:
         r = requests.post(url, headers=self.headers, timeout=30)
         r.raise_for_status()
         return True
-
