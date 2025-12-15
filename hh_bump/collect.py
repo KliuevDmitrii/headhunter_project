@@ -39,7 +39,7 @@ def main():
         return
 
     # --- файл ---
-    output_file = Path(s.vacancy_output_file)
+    output_file = Path(s.vacancies_output_file)
     output_file.unlink(missing_ok=True)  # перезаписываем каждый запуск
 
     rows = []
