@@ -1,36 +1,24 @@
 import csv
-import requests
 from pathlib import Path
 
 from hh_bump.api import HHApi
 from hh_bump.config import Settings
 from hh_bump.notifier import TelegramNotifier
-from hh_bump.auth import get_stored_access_token, refresh_access_token
 
 
 def main():
     s = Settings()
     notifier = TelegramNotifier()
 
-    # --- токен ---
-    try:
-        token = get_stored_access_token()
-        if not token:
-            token = refresh_access_token(
-                s.oauth_token_url,
-                s.client_id,
-                s.client_secret,
-                s.refresh_token,
-            )
-
-        api = HHApi(s.api_base, token, s.app_name)
-    except Exception as e:
-        notifier.send(f"❌ Ошибка токена: {e}")
-        return
+    api = HHApi(
+        api_base=s.api_base,
+        app_name=s.app_name,
+        token=None,  # ⚠️ ВАЖНО: без токена
+    )
 
     output_file = Path(s.vacancies_output_file)
     if output_file.exists():
-        output_file.unlink()  # всегда перезаписываем файл
+        output_file.unlink()
 
     rows = []
     searches_done = 0
@@ -66,7 +54,6 @@ def main():
                     name = v.get("name", "")
                     name_lc = name.lower()
 
-                    # --- фильтр исключений ---
                     if any(word in name_lc for word in s.exclude_keywords):
                         excluded += 1
                         continue
@@ -83,7 +70,6 @@ def main():
         notifier.send("⚠️ Вакансии не найдены, CSV не создан.")
         return
 
-    # --- запись CSV ---
     with output_file.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
@@ -96,7 +82,7 @@ def main():
         "📄 Сбор вакансий завершён\n"
         f"🔎 Поисковых запросов: {searches_done}\n"
         f"📑 Найдено вакансий: {total_found}\n"
-        f"🚫 Исключено по фильтру: {excluded}\n"
+        f"🚫 Исключено: {excluded}\n"
         f"📎 Файл: {output_file.name}"
     )
 
@@ -105,6 +91,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
