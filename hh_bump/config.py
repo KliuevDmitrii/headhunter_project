@@ -11,6 +11,7 @@ class Settings:
         hh = self.config["hh"]
         self.api_base = hh.get("api_base")
         self.oauth_token_url = hh.get("oauth_token_url")
+        self.app_name = hh.get("app_name")
         self.resume_ids = [
             x.strip() for x in hh.get("resume_ids", "").split(",") if x.strip()
         ]
