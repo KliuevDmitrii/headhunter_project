@@ -32,7 +32,7 @@ def main():
                 s.refresh_token
             )
 
-        api = HHApi(s.api_base, token)
+        api = HHApi(s.api_base, token, s.app_name)
 
     except Exception as e:
         notifier.send(f"❌ Ошибка токена: {e}")
