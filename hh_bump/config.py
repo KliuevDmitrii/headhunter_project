@@ -1,8 +1,4 @@
 import configparser
-from pathlib import Path
-
-
-import configparser
 
 
 class Settings:
@@ -45,15 +41,7 @@ class Settings:
             x.strip().lower()
             for x in vc.get("exclude_company_keywords", "").split(",")
             if x.strip()
-]
-
-        # --- EXCLUDE COMPANIES ---
-        vc = self.config["vacancy_collect"]
-        self.exclude_company_keywords = [
-            x.strip().lower()
-            for x in vc.get("exclude_company_keywords", "").splitlines()
-            if x.strip()
-        ]   
+        ]
 
         # --- RESUME ---
         resume = self.config["resume"]
