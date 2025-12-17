@@ -39,6 +39,14 @@ class Settings:
         ]
         self.days_back = vc.getint("days_back", 3)
 
+        # --- EXCLUDE COMPANIES ---
+        vc = self.config["vacancy_collect"]
+        self.exclude_company_keywords = [
+            x.strip().lower()
+            for x in vc.get("exclude_company_keywords", "").splitlines()
+            if x.strip()
+        ]   
+
         # --- RESUME ---
         resume = self.config["resume"]
         self.resume_min_interval_minutes = resume.getint(

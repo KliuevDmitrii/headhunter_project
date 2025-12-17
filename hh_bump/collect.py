@@ -13,7 +13,15 @@ def main():
     notifier = TelegramNotifier()
 
     token = get_stored_access_token()
-    api = HHApi(s.api_base, token, s.app_name)
+    if not token:
+        notifier.send("❌ Нет access_token для сбора вакансий")
+        return
+
+    api = HHApi(
+        api_base=s.api_base,
+        token=token,
+        app_name=s.app_name,
+    )
 
     output_file = Path(s.vacancies_output_file)
     vacancies = []
@@ -22,6 +30,9 @@ def main():
     date_from = (
         datetime.now(timezone.utc) - timedelta(days=s.days_back)
     ).strftime("%Y-%m-%dT%H:%M:%S")
+
+    exclude_keywords = [x.lower() for x in s.exclude_keywords]
+    exclude_companies = [x.lower() for x in s.exclude_companies]
 
     for text in s.search_texts:
         print(f"\n🔍 Поиск по ключу: «{text}»")
@@ -48,9 +59,15 @@ def main():
                     break
 
                 for v in items:
-                    name = v.get("name", "").lower()
+                    vacancy_name = (v.get("name") or "").lower()
+                    company_name = (v.get("employer", {}).get("name") or "").lower()
 
-                    if any(x in name for x in s.exclude_keywords):
+                    # ❌ фильтр по названию вакансии
+                    if any(x in vacancy_name for x in exclude_keywords):
+                        continue
+
+                    # ❌ фильтр по компании
+                    if any(x in company_name for x in exclude_companies):
                         continue
 
                     vacancies.append({
@@ -68,7 +85,7 @@ def main():
         notifier.send(msg)
         return
 
-    # CSV
+    # --- CSV ---
     with output_file.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
@@ -89,6 +106,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
