@@ -31,13 +31,21 @@ class Settings:
 
         # --- VACANCY COLLECT ---
         vc = self.config["vacancy_collect"]
+
         self.vacancies_output_file = vc.get("output_file", "vacancies.csv")
+        self.days_back = vc.getint("days_back", 3)
+
         self.exclude_keywords = [
             x.strip().lower()
             for x in vc.get("exclude_keywords", "").split(",")
             if x.strip()
         ]
-        self.days_back = vc.getint("days_back", 3)
+
+        self.exclude_company_keywords = [
+            x.strip().lower()
+            for x in vc.get("exclude_company_keywords", "").split(",")
+            if x.strip()
+]
 
         # --- EXCLUDE COMPANIES ---
         vc = self.config["vacancy_collect"]
