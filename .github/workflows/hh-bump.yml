@@ -2,7 +2,8 @@ name: HH Resume Bump
 
 on:
   schedule:
-    - cron: "0 * * * *"   # каждый час (UTC)
+    # Каждый час с 06:00 до 15:00 UTC = 10:00–19:00 по Тбилиси (UTC+4)
+    - cron: "0 6-15 * * *"
   workflow_dispatch:
 
 jobs:
@@ -30,4 +31,3 @@ jobs:
         run: |
           python -m hh_bump.main > output.log 2>&1 || true
           cat output.log
-
