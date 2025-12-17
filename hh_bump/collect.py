@@ -31,8 +31,8 @@ def main():
         datetime.now(timezone.utc) - timedelta(days=s.days_back)
     ).strftime("%Y-%m-%dT%H:%M:%S")
 
-    exclude_keywords = [x.lower() for x in s.exclude_keywords]
-    exclude_companies = [x.lower() for x in s.exclude_companies]
+    exclude_keywords = s.exclude_keywords
+    exclude_company_keywords = s.exclude_company_keywords
 
     for text in s.search_texts:
         print(f"\n🔍 Поиск по ключу: «{text}»")
@@ -66,8 +66,8 @@ def main():
                     if any(x in vacancy_name for x in exclude_keywords):
                         continue
 
-                    # ❌ фильтр по компании
-                    if any(x in company_name for x in exclude_companies):
+                    # ❌ фильтр по названию компании
+                    if any(x in company_name for x in exclude_company_keywords):
                         continue
 
                     vacancies.append({
