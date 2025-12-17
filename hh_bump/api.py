@@ -24,7 +24,16 @@ class HHApi:
 
     # ===== вакансии (ТОЛЬКО public) =====
 
-    def search_vacancies(self, text: str, area: int, page: int, per_page: int):
+    def search_vacancies(
+        self,
+        text: str,
+        area: int,
+        per_page: int,
+        page: int,
+        date_from: str | None = None,
+    ) -> list[dict]:
+        url = f"{self.api_base}/vacancies"
+
         params = {
             "text": text,
             "area": area,
@@ -32,9 +41,12 @@ class HHApi:
             "per_page": per_page,
         }
 
+        if date_from:
+            params["date_from"] = date_from
+
         r = requests.get(
-            f"{self.api_base}/vacancies",
-            headers=self._public_headers(),  # ← ВОТ ТУТ
+            url,
+            headers=self.headers,
             params=params,
             timeout=30,
         )

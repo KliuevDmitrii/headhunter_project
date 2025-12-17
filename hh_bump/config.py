@@ -2,6 +2,9 @@ import configparser
 from pathlib import Path
 
 
+import configparser
+
+
 class Settings:
     def __init__(self, config_path: str = "config.ini"):
         self.config = configparser.ConfigParser()
@@ -16,7 +19,7 @@ class Settings:
             x.strip() for x in hh.get("resume_ids", "").split(",") if x.strip()
         ]
 
-        # --- APPLY / SEARCH ---
+        # --- SEARCH ---
         apply = self.config["apply"]
         self.search_texts = [
             x.strip() for x in apply.get("search_texts", "").split(",") if x.strip()
@@ -34,9 +37,11 @@ class Settings:
             for x in vc.get("exclude_keywords", "").split(",")
             if x.strip()
         ]
+        self.days_back = vc.getint("days_back", 3)
 
         # --- RESUME ---
         resume = self.config["resume"]
         self.resume_min_interval_minutes = resume.getint(
             "min_interval_minutes", 240
         )
+
