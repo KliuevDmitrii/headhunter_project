@@ -1,4 +1,5 @@
 import configparser
+import os
 
 
 class Settings:
@@ -27,8 +28,7 @@ class Settings:
 
         # --- VACANCY COLLECT ---
         vc = self.config["vacancy_collect"]
-
-        self.vacancies_output_file = vc.get("output_file", "vacancies.csv")
+        self.vacancies_output_file = vc.get("output_file", "vacancies.html")
         self.days_back = vc.getint("days_back", 3)
 
         self.exclude_keywords = [
@@ -49,3 +49,6 @@ class Settings:
             "min_interval_minutes", 240
         )
 
+        # --- TELEGRAM (ТОЛЬКО ENV) ---
+        self.tg_bot_token = os.getenv("TG_BOT_TOKEN")
+        self.tg_chat_id = os.getenv("TG_CHAT_ID")

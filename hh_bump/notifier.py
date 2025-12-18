@@ -7,6 +7,10 @@ class TelegramNotifier:
         from hh_bump.config import Settings
 
         s = Settings()
+
+        if not s.tg_bot_token or not s.tg_chat_id:
+            raise RuntimeError("❌ TG_BOT_TOKEN или TG_CHAT_ID не заданы")
+
         self.token = s.tg_bot_token
         self.chat_id = s.tg_chat_id
         self.api_url = f"https://api.telegram.org/bot{self.token}"
