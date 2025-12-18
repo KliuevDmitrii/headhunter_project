@@ -8,6 +8,11 @@ from hh_bump.auth import get_stored_access_token
 from hh_bump.notifier import TelegramNotifier
 
 
+def parse_dt(value: str) -> datetime:
+    """HH отдаёт ISO-дату — приводим к datetime"""
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def main():
     s = Settings()
     notifier = TelegramNotifier()
@@ -24,7 +29,10 @@ def main():
     )
 
     output_file = Path(s.vacancies_output_file)
-    vacancies = []
+
+    # 🔑 ключ = url, значение = вакансия
+    вакансии_по_url: dict[str, dict] = {}
+
     searches_done = 0
 
     date_from = (
@@ -59,31 +67,58 @@ def main():
                     break
 
                 for v in items:
-                    vacancy_name = (v.get("name") or "").lower()
-                    company_name = (v.get("employer", {}).get("name") or "").lower()
+                    name = v.get("name") or ""
+                    vacancy_name = name.lower()
+
+                    company = v.get("employer", {}).get("name") or ""
+                    company_name = company.lower()
+
+                    url = v.get("alternate_url")
+                    published_at = v.get("published_at")
+
+                    if not url or not published_at:
+                        continue
 
                     # ❌ фильтр по названию вакансии
                     if any(x in vacancy_name for x in exclude_keywords):
                         continue
 
-                    # ❌ фильтр по названию компании
+                    # ❌ фильтр по компании
                     if any(x in company_name for x in exclude_company_keywords):
                         continue
 
-                    vacancies.append({
+                    new_dt = parse_dt(published_at)
+
+                    vacancy_data = {
                         "id": v.get("id"),
-                        "name": v.get("name"),
-                        "company": v.get("employer", {}).get("name"),
+                        "name": name,
+                        "company": company,
                         "area": v.get("area", {}).get("name"),
-                        "published_at": v.get("published_at"),
-                        "url": v.get("alternate_url"),
-                    })
+                        "published_at": published_at,
+                        "url": url,
+                    }
+
+                    # 🔁 дедупликация по URL
+                    if url in вакансии_по_url:
+                        old_dt = parse_dt(вакансии_по_url[url]["published_at"])
+                        if new_dt > old_dt:
+                            вакансии_по_url[url] = vacancy_data
+                    else:
+                        вакансии_по_url[url] = vacancy_data
+
+    vacancies = list(вакансии_по_url.values())
 
     if not vacancies:
         msg = "⚠️ Вакансии за последние дни не найдены."
         print(msg)
         notifier.send(msg)
         return
+
+    # 📊 сортируем по дате (сначала новые)
+    vacancies.sort(
+        key=lambda x: parse_dt(x["published_at"]),
+        reverse=True,
+    )
 
     # --- CSV ---
     with output_file.open("w", newline="", encoding="utf-8") as f:
@@ -97,7 +132,7 @@ def main():
     msg = (
         "📄 Сбор вакансий завершён\n"
         f"🔎 Поисковых запросов: {searches_done}\n"
-        f"📑 Найдено вакансий: {len(vacancies)}\n"
+        f"📑 Уникальных вакансий: {len(vacancies)}\n"
         f"📎 Файл: {output_file.name}"
     )
     print(msg)
@@ -106,10 +141,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
