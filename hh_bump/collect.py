@@ -1,4 +1,3 @@
-import csv
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -9,8 +8,84 @@ from hh_bump.notifier import TelegramNotifier
 
 
 def parse_dt(value: str) -> datetime:
-    """HH отдаёт ISO-дату — приводим к datetime"""
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def build_html_report(vacancies: list[dict], path: Path):
+    rows = []
+    for v in vacancies:
+        rows.append(
+            f"""
+            <tr>
+                <td>{v['published_at']}</td>
+                <td>{v['name']}</td>
+                <td>{v['company']}</td>
+                <td>{v['area']}</td>
+                <td><a href="{v['url']}" target="_blank">Открыть</a></td>
+            </tr>
+            """
+        )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="utf-8">
+        <title>HH вакансии</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 20px;
+            }}
+            h2 {{
+                margin-bottom: 10px;
+            }}
+            table {{
+                border-collapse: collapse;
+                width: 100%;
+            }}
+            th, td {{
+                border: 1px solid #ccc;
+                padding: 8px;
+                vertical-align: top;
+            }}
+            th {{
+                background-color: #f0f0f0;
+            }}
+            tr:nth-child(even) {{
+                background-color: #fafafa;
+            }}
+            a {{
+                color: #1a73e8;
+                text-decoration: none;
+            }}
+            a:hover {{
+                text-decoration: underline;
+            }}
+        </style>
+    </head>
+    <body>
+        <h2>Найденные вакансии ({len(vacancies)})</h2>
+        <p>Отчёт сформирован: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Дата публикации</th>
+                    <th>Вакансия</th>
+                    <th>Компания</th>
+                    <th>Регион</th>
+                    <th>Ссылка</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+
+    path.write_text(html, encoding="utf-8")
 
 
 def main():
@@ -28,11 +103,7 @@ def main():
         app_name=s.app_name,
     )
 
-    output_file = Path(s.vacancies_output_file)
-
-    # 🔑 ключ = url, значение = вакансия
-    вакансии_по_url: dict[str, dict] = {}
-
+    vacancies_by_url: dict[str, dict] = {}
     searches_done = 0
 
     date_from = (
@@ -40,7 +111,7 @@ def main():
     ).strftime("%Y-%m-%dT%H:%M:%S")
 
     exclude_keywords = s.exclude_keywords
-    exclude_company_keywords = s.exclude_company_keywords
+    exclude_companies = s.exclude_company_keywords
 
     for text in s.search_texts:
         print(f"\n🔍 Поиск по ключу: «{text}»")
@@ -63,79 +134,62 @@ def main():
                     print(f"❌ Ошибка поиска [{text}, area={area}, page={page}]: {e}")
                     continue
 
-                if not items:
-                    break
-
                 for v in items:
-                    name = v.get("name") or ""
-                    vacancy_name = name.lower()
+                    name = (v.get("name") or "").lower()
+                    company = (v.get("employer", {}).get("name") or "").lower()
 
-                    company = v.get("employer", {}).get("name") or ""
-                    company_name = company.lower()
+                    if any(x in name for x in exclude_keywords):
+                        continue
+
+                    if any(x in company for x in exclude_companies):
+                        continue
 
                     url = v.get("alternate_url")
+                    if not url:
+                        continue
+
                     published_at = v.get("published_at")
-
-                    if not url or not published_at:
-                        continue
-
-                    # ❌ фильтр по названию вакансии
-                    if any(x in vacancy_name for x in exclude_keywords):
-                        continue
-
-                    # ❌ фильтр по компании
-                    if any(x in company_name for x in exclude_company_keywords):
+                    if not published_at:
                         continue
 
                     new_dt = parse_dt(published_at)
 
-                    vacancy_data = {
+                    data = {
                         "id": v.get("id"),
-                        "name": name,
-                        "company": company,
+                        "name": v.get("name"),
+                        "company": v.get("employer", {}).get("name"),
                         "area": v.get("area", {}).get("name"),
                         "published_at": published_at,
                         "url": url,
                     }
 
-                    # 🔁 дедупликация по URL
-                    if url in вакансии_по_url:
-                        old_dt = parse_dt(вакансии_по_url[url]["published_at"])
+                    if url in vacancies_by_url:
+                        old_dt = parse_dt(vacancies_by_url[url]["published_at"])
                         if new_dt > old_dt:
-                            вакансии_по_url[url] = vacancy_data
+                            vacancies_by_url[url] = data
                     else:
-                        вакансии_по_url[url] = vacancy_data
+                        vacancies_by_url[url] = data
 
-    vacancies = list(вакансии_по_url.values())
-
-    if not vacancies:
-        msg = "⚠️ Вакансии за последние дни не найдены."
-        print(msg)
-        notifier.send(msg)
-        return
-
-    # 📊 сортируем по дате (сначала новые)
-    vacancies.sort(
+    vacancies = sorted(
+        vacancies_by_url.values(),
         key=lambda x: parse_dt(x["published_at"]),
         reverse=True,
     )
 
-    # --- CSV ---
-    with output_file.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=vacancies[0].keys(),
-        )
-        writer.writeheader()
-        writer.writerows(vacancies)
+    if not vacancies:
+        notifier.send("⚠️ Вакансии за последние дни не найдены.")
+        return
+
+    output_file = Path(s.vacancies_output_file).with_suffix(".html")
+    build_html_report(vacancies, output_file)
 
     msg = (
-        "📄 Сбор вакансий завершён\n"
-        f"🔎 Поисковых запросов: {searches_done}\n"
-        f"📑 Уникальных вакансий: {len(vacancies)}\n"
+        "📄 <b>Отчёт по вакансиям</b>\n"
+        f"🔎 Найдено: <b>{len(vacancies)}</b>\n"
+        f"📅 За последние {s.days_back} дней\n"
         f"📎 Файл: {output_file.name}"
     )
-    print(msg)
+
     notifier.send(msg, file_path=output_file)
 
 
