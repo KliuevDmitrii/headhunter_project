@@ -2,7 +2,7 @@ name: HH Collect Vacancies
 
 on:
   schedule:
-    - cron: "0 13 * * *"   # 17:00 Tbilisi (UTC+4)
+    - cron: "0 13 * * 1-5"   # ПН–ПТ, 17:00 Тбилиси (UTC+4)
   workflow_dispatch:
 
 jobs:
@@ -29,3 +29,4 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           python -m hh_bump.collect
+
