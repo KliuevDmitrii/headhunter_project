@@ -3,7 +3,8 @@ name: HH Resume Bump
 on:
   schedule:
     # Каждый час с 06:00 до 15:00 UTC = 10:00–19:00 по Тбилиси (UTC+4)
-    - cron: "0 6-15 * * *"
+    # Только ПН–ПТ
+    - cron: "0 6-15 * * 1-5"
   workflow_dispatch:
 
 jobs:
