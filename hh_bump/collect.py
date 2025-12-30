@@ -20,69 +20,80 @@ def build_html_report(vacancies: list[dict], path: Path):
                 <td>{v['published_at']}</td>
                 <td>{v['name']}</td>
                 <td>{v['company']}</td>
+                <td style="text-align:center;">
+                    <input type="checkbox">
+                </td>
                 <td>{v['area']}</td>
-                <td><a href="{v['url']}" target="_blank">Открыть</a></td>
+                <td>
+                    <a href="{v['url']}" target="_blank">Открыть</a>
+                </td>
             </tr>
             """
         )
 
     html = f"""
-    <!DOCTYPE html>
-    <html lang="ru">
-    <head>
-        <meta charset="utf-8">
-        <title>HH вакансии</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                margin: 20px;
-            }}
-            h2 {{
-                margin-bottom: 10px;
-            }}
-            table {{
-                border-collapse: collapse;
-                width: 100%;
-            }}
-            th, td {{
-                border: 1px solid #ccc;
-                padding: 8px;
-                vertical-align: top;
-            }}
-            th {{
-                background-color: #f0f0f0;
-            }}
-            tr:nth-child(even) {{
-                background-color: #fafafa;
-            }}
-            a {{
-                color: #1a73e8;
-                text-decoration: none;
-            }}
-            a:hover {{
-                text-decoration: underline;
-            }}
-        </style>
-    </head>
-    <body>
-        <h2>Найденные вакансии ({len(vacancies)})</h2>
-        <p>Отчёт сформирован: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
-        <table>
-            <thead>
-                <tr>
-                    <th>Дата публикации</th>
-                    <th>Вакансия</th>
-                    <th>Компания</th>
-                    <th>Регион</th>
-                    <th>Ссылка</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(rows)}
-            </tbody>
-        </table>
-    </body>
-    </html>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>HH вакансии</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }}
+        h2 {{
+            margin-bottom: 10px;
+        }}
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+        }}
+        th, td {{
+            border: 1px solid #ccc;
+            padding: 8px;
+            vertical-align: middle;
+        }}
+        th {{
+            background-color: #f0f0f0;
+        }}
+        tr:nth-child(even) {{
+            background-color: #fafafa;
+        }}
+        a {{
+            color: #1a73e8;
+            text-decoration: none;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+        input[type="checkbox"] {{
+            transform: scale(1.2);
+            cursor: pointer;
+        }}
+    </style>
+</head>
+<body>
+    <h2>Найденные вакансии ({len(vacancies)})</h2>
+    <p>Отчёт сформирован: {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Дата публикации</th>
+                <th>Вакансия</th>
+                <th>Компания</th>
+                <th>Просмотрено</th>
+                <th>Регион</th>
+                <th>Ссылка</th>
+            </tr>
+        </thead>
+        <tbody>
+            {''.join(rows)}
+        </tbody>
+    </table>
+</body>
+</html>
     """
 
     path.write_text(html, encoding="utf-8")
@@ -145,11 +156,8 @@ def main():
                         continue
 
                     url = v.get("alternate_url")
-                    if not url:
-                        continue
-
                     published_at = v.get("published_at")
-                    if not published_at:
+                    if not url or not published_at:
                         continue
 
                     new_dt = parse_dt(published_at)
