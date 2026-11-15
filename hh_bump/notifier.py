@@ -1,38 +1,109 @@
-import requests
 from pathlib import Path
+
+import requests
+
+
+class TelegramError(RuntimeError):
+    """A delivery error safe to include in logs (without the bot token)."""
 
 
 class TelegramNotifier:
+    # Separate connect/read limits also cover report uploads.
+    timeout = (10, 60)
+
     def __init__(self):
         from hh_bump.config import Settings
 
         s = Settings()
 
-        if not s.tg_bot_token or not s.tg_chat_id:
-            raise RuntimeError("❌ TG_BOT_TOKEN или TG_CHAT_ID не заданы")
-
-        self.token = s.tg_bot_token
-        self.chat_id = s.tg_chat_id
+        self.token = (s.tg_bot_token or "").strip()
+        self.chat_id = (s.tg_chat_id or "").strip()
+        missing = [
+            name
+            for name, value in (
+                ("TG_BOT_TOKEN", self.token),
+                ("TG_CHAT_ID", self.chat_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise TelegramError(
+                "Не заданы переменные окружения Telegram: " + ", ".join(missing)
+            )
         self.api_url = f"https://api.telegram.org/bot{self.token}"
 
+    def _post(self, method: str, **kwargs):
+        # Retrying a timed-out POST can deliver the same message twice.
+        try:
+            response = requests.post(
+                f"{self.api_url}/{method}", timeout=self.timeout, **kwargs
+            )
+        except requests.Timeout:
+            raise TelegramError(
+                f"Telegram {method}: превышено время ожидания; "
+                "результат доставки неизвестен"
+            ) from None
+        except requests.RequestException:
+            # Requests exceptions can contain the full URL including the token.
+            raise TelegramError(
+                f"Telegram {method}: ошибка соединения; "
+                "проверьте доступ к api.telegram.org"
+            ) from None
+
+        try:
+            result = response.json()
+        except ValueError:
+            result = None
+        if (
+            200 <= response.status_code < 300
+            and isinstance(result, dict)
+            and result.get("ok") is True
+        ):
+            return result
+
+        description = "некорректный ответ API"
+        if isinstance(result, dict):
+            description = str(result.get("description") or description)
+            parameters = result.get("parameters")
+            if isinstance(parameters, dict):
+                retry_after = parameters.get("retry_after")
+                if isinstance(retry_after, int):
+                    description += f"; повторите через {retry_after} с"
+        for value in (self.token, self.chat_id):
+            description = description.replace(value, "[REDACTED]")
+        description = description[:500]
+        raise TelegramError(
+            f"Telegram {method}: HTTP {response.status_code}: {description}"
+        )
+
+    def _send_message(self, text: str):
+        self._post(
+            "sendMessage",
+            json={
+                "chat_id": self.chat_id,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+        )
+
     def send(self, text: str, file_path: Path | None = None):
-        payload = {
-            "chat_id": self.chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }
+        if file_path is None:
+            self._send_message(text)
+            return
 
-        r = requests.post(f"{self.api_url}/sendMessage", json=payload)
-        r.raise_for_status()
-
-        if file_path:
-            with file_path.open("rb") as f:
-                files = {"document": f}
-                data = {"chat_id": self.chat_id}
-                r = requests.post(
-                    f"{self.api_url}/sendDocument",
-                    data=data,
-                    files=files,
-                )
-                r.raise_for_status()
+        # Open the report before sending anything, so a missing file cannot
+        # produce a success-looking notification without its attachment.
+        with Path(file_path).open("rb") as report:
+            data = {"chat_id": self.chat_id}
+            # Counting the raw HTML as UTF-16 is conservative: Telegram's
+            # caption limit applies after parsing entities.
+            if len(text.encode("utf-16-le")) // 2 <= 1024:
+                data.update(caption=text, parse_mode="HTML")
+            else:
+                self._send_message(text)
+            self._post(
+                "sendDocument",
+                data=data,
+                files={"document": report},
+            )

@@ -1,4 +1,6 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 class HHApi:
@@ -6,6 +8,26 @@ class HHApi:
         self.api_base = api_base.rstrip("/")
         self.app_name = app_name
         self.token = token
+        self.session = requests.Session()
+        # Повторяем только безопасные GET при временных сбоях.
+        retries = Retry(
+            total=2,
+            backoff_factor=1,
+            status_forcelist=(500, 502, 503, 504),
+            allowed_methods=frozenset({"GET"}),
+            respect_retry_after_header=False,
+        )
+        for scheme in ("https://", "http://"):
+            self.session.mount(scheme, HTTPAdapter(max_retries=retries))
+
+    def close(self):
+        self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
     # ========= HEADERS =========
 
@@ -56,15 +78,18 @@ class HHApi:
         if date_from:
             params["date_from"] = date_from
 
-        r = requests.get(
+        r = self.session.get(
             url,
-            headers=self._public_headers(),  # ✅ ВАЖНО
+            headers=self._public_headers(),
             params=params,
             timeout=30,
         )
         r.raise_for_status()
 
-        return r.json().get("items", [])
+        data = r.json()
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            raise ValueError("HH API: неверный формат списка вакансий")
+        return data["items"]
 
     # ========= RESUMES (AUTH API) =========
 

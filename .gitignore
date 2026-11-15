@@ -482,3 +482,11 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,test
+
+# Keep regression tests despite the generic *tests pattern above.
+!/tests/
+!/tests/*.py
+
+# Local authentication state and generated vacancy report.
+/state.json
+/vacancies.html
