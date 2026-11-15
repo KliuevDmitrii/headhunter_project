@@ -32,7 +32,7 @@ class HHApiTests(unittest.TestCase):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.addCleanup(self.stop_server)
-        self.api = HHApi(f"http://127.0.0.1:{self.server.server_port}", "test-app", "unused-token")
+        self.api = HHApi(f"http://127.0.0.1:{self.server.server_port}", "test-app")
         self.addCleanup(self.api.close)
 
     def stop_server(self):
@@ -58,6 +58,41 @@ class HHApiTests(unittest.TestCase):
         self.responses.insert(0, (503, {}))
         self.assertEqual(self.search(), [{"id": "1"}])
         self.assertEqual(len(self.calls), 2)
+
+    def test_application_authorization_reaches_hh(self):
+        self.api.token = "test-application-token"
+        self.search()
+        self.assertEqual(self.calls[0][1]["Authorization"], "Bearer test-application-token")
+
+    def test_forbidden_explains_auth_failure_without_dumping_body(self):
+        self.responses = [(403, {"errors": [
+            {"type": "oauth", "value": "bad_authorization"},
+        ], "access_token": "secret-token", "description": "secret-token"})]
+        with self.assertRaises(requests.HTTPError) as error:
+            self.search()
+        message = str(error.exception)
+        self.assertIn("HTTP 403", message)
+        self.assertIn("bad_authorization", message)
+        self.assertIn("HH_APP_TOKEN", message)
+        self.assertNotIn("secret-token", message)
+        self.assertEqual(error.exception.response.status_code, 403)
+
+    def test_captcha_error_excludes_challenge_url(self):
+        self.responses = [(403, {"errors": [{
+            "type": "captcha_required", "value": "captcha_required",
+            "captcha_url": "https://example.com/captcha?state=private-challenge",
+        }]})]
+        with self.assertRaises(requests.HTTPError) as error:
+            self.search()
+        self.assertIn("captcha_required", str(error.exception))
+        self.assertNotIn("private-challenge", str(error.exception))
+
+    def test_unrecognized_error_does_not_expose_response(self):
+        self.responses = [(403, {"errors": [{"type": "secret-type", "value": "secret-value"}]})]
+        with self.assertRaises(requests.HTTPError) as error:
+            self.search()
+        self.assertIn("без распознаваемого кода", str(error.exception))
+        self.assertNotIn("secret-", str(error.exception))
 
     def test_persistent_failure_has_bounded_retries(self):
         self.responses = [(503, {})] * 3

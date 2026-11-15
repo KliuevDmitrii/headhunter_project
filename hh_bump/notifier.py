@@ -38,16 +38,40 @@ class TelegramNotifier:
             response = requests.post(
                 f"{self.api_url}/{method}", timeout=self.timeout, **kwargs
             )
-        except requests.Timeout:
+        except requests.RequestException as exc:
+            # Preserve the failure category, never the exception text: requests
+            # includes the complete URL (and bot token) in transport errors.
+            if isinstance(exc, requests.ConnectTimeout):
+                description = (
+                    "соединение не установлено: истекло время подключения "
+                    f"(лимит {self.timeout[0]} с); проверьте DNS и HTTPS-доступ "
+                    "к api.telegram.org с машины, запускающей скрипт"
+                )
+            elif isinstance(exc, requests.ReadTimeout):
+                description = (
+                    f"ответ не получен в течение {self.timeout[1]} с; "
+                    "результат доставки неизвестен; проверьте доступ к "
+                    "api.telegram.org с машины, запускающей скрипт"
+                )
+            elif isinstance(exc, requests.Timeout):
+                description = (
+                    "превышено время ожидания; результат доставки неизвестен; "
+                    "проверьте доступ к api.telegram.org"
+                )
+            elif isinstance(exc, requests.exceptions.SSLError):
+                description = (
+                    "ошибка TLS; проверьте сертификаты и HTTPS-доступ "
+                    "к api.telegram.org"
+                )
+            elif isinstance(exc, requests.exceptions.ProxyError):
+                description = (
+                    "ошибка прокси; проверьте настройки прокси и разрешение "
+                    "доступа к api.telegram.org"
+                )
+            else:
+                description = "ошибка соединения; проверьте доступ к api.telegram.org"
             raise TelegramError(
-                f"Telegram {method}: превышено время ожидания; "
-                "результат доставки неизвестен"
-            ) from None
-        except requests.RequestException:
-            # Requests exceptions can contain the full URL including the token.
-            raise TelegramError(
-                f"Telegram {method}: ошибка соединения; "
-                "проверьте доступ к api.telegram.org"
+                f"Telegram {method}: {type(exc).__name__}: {description}"
             ) from None
 
         try:

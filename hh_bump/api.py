@@ -31,14 +31,57 @@ class HHApi:
 
     # ========= HEADERS =========
 
-    def _public_headers(self) -> dict:
+    def _vacancy_headers(self) -> dict:
         """
-        Заголовки для публичных запросов (поиск вакансий).
-        Authorization НЕ нужен.
+        Поиск поддерживает токен приложения; токен соискателя не используется.
         """
-        return {
-            "HH-User-Agent": self.app_name,
+        headers = {"HH-User-Agent": self.app_name}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
+    @staticmethod
+    def _raise_search_error(response):
+        if response.status_code < 400:
+            return
+        # Не выводим весь ответ: он может содержать токены и ссылки капчи.
+        hints = {
+            "bad_authorization": "проверьте HH_APP_TOKEN (токен приложения)",
+            "token_expired": "срок действия токена истёк",
+            "token_revoked": "токен отозван",
+            "application_not_found": "приложение не найдено",
+            "user_auth_expected": "данный метод требует авторизации пользователя",
+            "captcha_required": "HH требует пройти капчу; автоматические повторы остановлены",
+            "bad_user_agent": "HH отклонил заголовок HH-User-Agent",
+            "too_many_requests": "достигнут лимит запросов HH",
         }
+        known_codes = set(hints) | {
+            "oauth", "forbidden", "bad_argument", "bad_arguments", "not_found",
+            "unset", "blacklisted", "text", "area", "page", "per_page", "date_from",
+        }
+        try:
+            body = response.json()
+        except ValueError:
+            body = None
+        errors = body.get("errors", []) if isinstance(body, dict) else []
+        details = []
+        if isinstance(errors, list):
+            for error in errors:
+                if not isinstance(error, dict):
+                    continue
+                for key in ("type", "value"):
+                    code = error.get(key)
+                    if isinstance(code, str) and code in known_codes and code not in details:
+                        details.append(code)
+        message = f"HH API: HTTP {response.status_code}"
+        if details:
+            message += "; " + ", ".join(details)
+            for code in details:
+                if code in hints:
+                    message += "; " + hints[code]
+        else:
+            message += "; ответ без распознаваемого кода HH (возможен отказ шлюза)"
+        raise requests.HTTPError(message, response=response)
 
     def _auth_headers(self) -> dict:
         """
@@ -63,7 +106,7 @@ class HHApi:
         date_from: str | None = None,
     ) -> list[dict]:
         """
-        Поиск вакансий (публичный endpoint).
+        Поиск вакансий; при наличии используется токен приложения.
         """
 
         url = f"{self.api_base}/vacancies"
@@ -80,11 +123,11 @@ class HHApi:
 
         r = self.session.get(
             url,
-            headers=self._public_headers(),
+            headers=self._vacancy_headers(),
             params=params,
             timeout=30,
         )
-        r.raise_for_status()
+        self._raise_search_error(r)
 
         data = r.json()
         if not isinstance(data, dict) or not isinstance(data.get("items"), list):

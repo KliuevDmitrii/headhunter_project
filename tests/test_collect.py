@@ -14,6 +14,7 @@ from hh_bump import collect
 def settings(**changes):
     values = dict(
         api_base="https://api.hh.ru", app_name="test-app",
+        hh_app_token=None,
         search_texts=["Python"], areas=[1], per_page=2,
         max_pages=3, max_searches_per_run=20, days_back=3,
         exclude_keywords=[], exclude_company_keywords=[],
@@ -140,6 +141,10 @@ class CollectVacanciesTests(unittest.TestCase):
 
 class CollectionMainTests(unittest.TestCase):
     def setUp(self):
+        # Tests must not append simulated failures to the real Actions summary.
+        summary_patch = patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": ""})
+        summary_patch.start()
+        self.addCleanup(summary_patch.stop)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.output = Path(directory.name) / "nested" / "vacancies<&>.json"
@@ -163,7 +168,7 @@ class CollectionMainTests(unittest.TestCase):
         ]
         with patch.dict(os.environ, {}, clear=True):
             collect.main()
-        self.api_factory.assert_called_once_with(api_base="https://api.hh.ru", app_name="test-app")
+        self.api_factory.assert_called_once_with(api_base="https://api.hh.ru", app_name="test-app", token=None)
         report = self.output.with_suffix(".html")
         self.assertTrue(report.exists())
         html = report.read_text(encoding="utf-8")
@@ -188,6 +193,23 @@ class CollectionMainTests(unittest.TestCase):
         self.assertIn("Не удалось собрать", message)
         self.assertNotIn("не найдены", message)
         self.assertNotIn("file_path", self.notifier.send.call_args.kwargs)
+
+    def test_application_token_is_used_for_vacancy_search(self):
+        self.settings.hh_app_token = "application-test-token"
+        collect.main()
+        self.assertEqual(self.api_factory.call_args.kwargs["token"], "application-test-token")
+
+    def test_hh_and_telegram_failures_both_survive_in_ci_summary(self):
+        from hh_bump.notifier import TelegramError
+        self.api.search_vacancies.side_effect = requests.HTTPError("HH API: HTTP 403; oauth, bad_authorization")
+        self.notifier.send.side_effect = TelegramError("Telegram ReadTimeout: результат доставки неизвестен")
+        summary = self.output.parent.parent / "summary.md"
+        with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}):
+            with self.assertLogs(collect.logger, level="ERROR"), self.assertRaisesRegex(RuntimeError, "Сбой сбора HH"):
+                collect.main()
+        text = summary.read_text()
+        self.assertIn("bad_authorization", text)
+        self.assertIn("ReadTimeout", text)
 
     def test_partial_failure_delivers_available_report_then_fails_run(self):
         self.settings.search_texts = ["Python", "SQL"]
