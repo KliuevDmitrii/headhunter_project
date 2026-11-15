@@ -1,19 +1,29 @@
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass, field
+from html import escape
+import logging
 from pathlib import Path
+
+import requests
 
 from hh_bump.config import Settings
 from hh_bump.api import HHApi
-from hh_bump.auth import get_stored_access_token
 from hh_bump.notifier import TelegramNotifier
+
+logger = logging.getLogger(__name__)
 
 
 def parse_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def build_html_report(vacancies: list[dict], path: Path):
     rows = []
     for v in vacancies:
+        v = {key: escape(str(value or ""), quote=True) for key, value in v.items()}
         rows.append(
             f"""
             <tr>
@@ -96,110 +106,142 @@ def build_html_report(vacancies: list[dict], path: Path):
 </html>
     """
 
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")
+
+
+@dataclass
+class CollectionResult:
+    vacancies: list[dict] = field(default_factory=list)
+    searches_done: int = 0
+    failed_searches: int = 0
+    invalid_items: int = 0
+    budget_reached: bool = False
+
+
+def collect_vacancies(s: Settings, api: HHApi) -> CollectionResult:
+    if not s.search_texts or not s.areas:
+        raise ValueError("Задайте search_texts и areas в config.ini")
+    if not 1 <= s.per_page <= 100 or min(
+        s.max_pages, s.max_searches_per_run, s.days_back
+    ) < 1:
+        raise ValueError("Неверные лимиты поиска в config.ini")
+
+    result = CollectionResult()
+    vacancies_by_url: dict[str, dict] = {}
+    date_from = (datetime.now(timezone.utc) - timedelta(days=s.days_back)).strftime(
+        "%Y-%m-%dT%H:%M:%S%z"
+    )
+    # Сначала первая страница всех запросов и регионов: один большой поиск
+    # не должен расходовать весь бюджет и лишать остальные ключи результатов.
+    active = list(dict.fromkeys((text, area) for text in s.search_texts for area in s.areas))
+    for page in range(s.max_pages):
+        next_page = []
+        for text, area in active:
+            if result.searches_done >= s.max_searches_per_run:
+                result.budget_reached = True
+                break
+            result.searches_done += 1  # Неудачные запросы тоже расходуют бюджет.
+            try:
+                items = api.search_vacancies(
+                    text=text, area=area, per_page=s.per_page,
+                    page=page, date_from=date_from,
+                )
+            except (requests.RequestException, ValueError) as exc:
+                result.failed_searches += 1
+                logger.error("Ошибка HH [%s, area=%s, page=%s]: %s", text, area, page, exc)
+                if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                    if exc.response.status_code in (403, 429):
+                        # Captcha или ограничение частоты: новые запросы усугубят сбой.
+                        next_page = []
+                        break
+                continue
+
+            # Проверяем исходную страницу, до фильтрации вакансий.
+            if len(items) >= s.per_page:
+                next_page.append((text, area))
+            for v in items:
+                try:
+                    employer = v.get("employer") or {}
+                    area_info = v.get("area") or {}
+                    name = v.get("name") or ""
+                    company = employer.get("name") or ""
+                    if any(x in name.lower() for x in s.exclude_keywords):
+                        continue
+                    if any(x in company.lower() for x in s.exclude_company_keywords):
+                        continue
+                    url = v.get("alternate_url")
+                    published_at = v.get("published_at")
+                    if not url or not published_at:
+                        result.invalid_items += 1
+                        continue
+                    new_dt = parse_dt(published_at)
+                    data = {
+                        "id": v.get("id"), "name": name, "company": company,
+                        "area": area_info.get("name") or "",
+                        "published_at": published_at, "url": url,
+                    }
+                    old = vacancies_by_url.get(url)
+                    if old is None or new_dt > parse_dt(old["published_at"]):
+                        vacancies_by_url[url] = data
+                except (AttributeError, TypeError, ValueError):
+                    result.invalid_items += 1
+                    logger.warning("Пропущена вакансия с некорректными данными")
+
+        if result.budget_reached or not next_page:
+            break
+        active = next_page
+
+    result.vacancies = sorted(
+        vacancies_by_url.values(), key=lambda v: parse_dt(v["published_at"]), reverse=True,
+    )
+    logger.info(
+        "Поиск завершён: запросов=%d, ошибок=%d, вакансий=%d, некорректных записей=%d",
+        result.searches_done, result.failed_searches, len(result.vacancies), result.invalid_items,
+    )
+    return result
 
 
 def main():
     s = Settings()
     notifier = TelegramNotifier()
+    # /vacancies — публичный endpoint, OAuth-токен здесь не нужен.
+    with HHApi(api_base=s.api_base, app_name=s.app_name) as api:
+        result = collect_vacancies(s, api)
 
-    token = get_stored_access_token()
-    if not token:
-        notifier.send("❌ Нет access_token для сбора вакансий")
-        return
+    warnings = []
+    if result.failed_searches:
+        warnings.append(f"⚠️ Подборка неполная: ошибок поиска — {result.failed_searches}.")
+    if result.budget_reached:
+        warnings.append("⚠️ Достигнут лимит запросов; просмотрены не все страницы.")
+    if result.invalid_items:
+        warnings.append(f"⚠️ Пропущено некорректных записей: {result.invalid_items}.")
 
-    api = HHApi(
-        api_base=s.api_base,
-        token=token,
-        app_name=s.app_name,
-    )
+    if result.vacancies:
+        output_file = Path(s.vacancies_output_file).with_suffix(".html")
+        build_html_report(result.vacancies, output_file)
+        msg = (
+            "📄 <b>Отчёт по вакансиям</b>\n"
+            f"🔎 Найдено: <b>{len(result.vacancies)}</b>\n"
+            f"📅 За последние {s.days_back} дней\n"
+            f"📎 Файл: {escape(output_file.name)}"
+        )
+        if warnings:
+            msg += "\n" + "\n".join(warnings)
+        notifier.send(msg, file_path=output_file)
+    elif result.failed_searches or result.invalid_items:
+        notifier.send("❌ Не удалось собрать подборку.\n" + "\n".join(warnings))
+    else:
+        msg = "ℹ️ По заданным фильтрам вакансии за последние дни не найдены."
+        if warnings:
+            msg += "\n" + "\n".join(warnings)
+        notifier.send(msg)
 
-    vacancies_by_url: dict[str, dict] = {}
-    searches_done = 0
-
-    date_from = (
-        datetime.now(timezone.utc) - timedelta(days=s.days_back)
-    ).strftime("%Y-%m-%dT%H:%M:%S")
-
-    exclude_keywords = s.exclude_keywords
-    exclude_companies = s.exclude_company_keywords
-
-    for text in s.search_texts:
-        print(f"\n🔍 Поиск по ключу: «{text}»")
-
-        for area in s.areas:
-            for page in range(s.max_pages):
-                if searches_done >= s.max_searches_per_run:
-                    break
-
-                try:
-                    items = api.search_vacancies(
-                        text=text,
-                        area=area,
-                        per_page=s.per_page,
-                        page=page,
-                        date_from=date_from,
-                    )
-                    searches_done += 1
-                except Exception as e:
-                    print(f"❌ Ошибка поиска [{text}, area={area}, page={page}]: {e}")
-                    continue
-
-                for v in items:
-                    name = (v.get("name") or "").lower()
-                    company = (v.get("employer", {}).get("name") or "").lower()
-
-                    if any(x in name for x in exclude_keywords):
-                        continue
-
-                    if any(x in company for x in exclude_companies):
-                        continue
-
-                    url = v.get("alternate_url")
-                    published_at = v.get("published_at")
-                    if not url or not published_at:
-                        continue
-
-                    new_dt = parse_dt(published_at)
-
-                    data = {
-                        "id": v.get("id"),
-                        "name": v.get("name"),
-                        "company": v.get("employer", {}).get("name"),
-                        "area": v.get("area", {}).get("name"),
-                        "published_at": published_at,
-                        "url": url,
-                    }
-
-                    if url in vacancies_by_url:
-                        old_dt = parse_dt(vacancies_by_url[url]["published_at"])
-                        if new_dt > old_dt:
-                            vacancies_by_url[url] = data
-                    else:
-                        vacancies_by_url[url] = data
-
-    vacancies = sorted(
-        vacancies_by_url.values(),
-        key=lambda x: parse_dt(x["published_at"]),
-        reverse=True,
-    )
-
-    if not vacancies:
-        notifier.send("⚠️ Вакансии за последние дни не найдены.")
-        return
-
-    output_file = Path(s.vacancies_output_file).with_suffix(".html")
-    build_html_report(vacancies, output_file)
-
-    msg = (
-        "📄 <b>Отчёт по вакансиям</b>\n"
-        f"🔎 Найдено: <b>{len(vacancies)}</b>\n"
-        f"📅 За последние {s.days_back} дней\n"
-        f"📎 Файл: {output_file.name}"
-    )
-
-    notifier.send(msg, file_path=output_file)
+    if result.failed_searches or result.invalid_items:
+        # Не превращаем сбой API в зелёный запуск GitHub Actions.
+        raise RuntimeError("Сбор вакансий завершён с ошибками; подробности выше в журнале")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     main()

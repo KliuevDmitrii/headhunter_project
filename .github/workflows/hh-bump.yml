@@ -10,6 +10,7 @@ on:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -23,12 +24,6 @@ jobs:
 
       - name: Run resume bump
         env:
-          HH_CLIENT_ID: ${{ secrets.HH_CLIENT_ID }}
-          HH_CLIENT_SECRET: ${{ secrets.HH_CLIENT_SECRET }}
-          HH_REFRESH_TOKEN: ${{ secrets.HH_REFRESH_TOKEN }}
-          HH_ACCESS_TOKEN: ${{ secrets.HH_ACCESS_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: |
-          python -m hh_bump.main > output.log 2>&1 || true
-          cat output.log
+        run: python -u -m hh_bump.main
