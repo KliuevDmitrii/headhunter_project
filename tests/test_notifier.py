@@ -140,6 +140,32 @@ class TelegramNotifierTests(unittest.TestCase):
         self.assertNotIn(self.token, rendered)
         self.assertIn("api.telegram.org", rendered)
 
+    def test_transport_error_categories_are_safe_and_actionable(self):
+        cases = (
+            (requests.ConnectTimeout, "соединение не установлено"),
+            (requests.ReadTimeout, "результат доставки неизвестен"),
+            (requests.Timeout, "результат доставки неизвестен"),
+            (requests.exceptions.SSLError, "проверьте сертификаты"),
+            (requests.exceptions.ProxyError, "проверьте настройки прокси"),
+        )
+        for exception_class, explanation in cases:
+            with self.subTest(exception_class=exception_class.__name__):
+                self.post.reset_mock()
+                self.post.side_effect = exception_class(
+                    f"URL /bot{self.token}/sendMessage?chat_id={self.settings.tg_chat_id}"
+                )
+                try:
+                    TelegramNotifier().send("Test")
+                except TelegramError:
+                    rendered = traceback.format_exc()
+                else:
+                    self.fail("Expected delivery error")
+                self.assertIn(exception_class.__name__, rendered)
+                self.assertIn(explanation, rendered)
+                self.assertNotIn(self.token, rendered)
+                self.assertNotIn(self.settings.tg_chat_id, rendered)
+                self.post.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

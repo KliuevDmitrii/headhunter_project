@@ -2,13 +2,14 @@ from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from html import escape
 import logging
+import os
 from pathlib import Path
 
 import requests
 
 from hh_bump.config import Settings
 from hh_bump.api import HHApi
-from hh_bump.notifier import TelegramNotifier
+from hh_bump.notifier import TelegramError, TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,7 @@ class CollectionResult:
     failed_searches: int = 0
     invalid_items: int = 0
     budget_reached: bool = False
+    errors: list[str] = field(default_factory=list)
 
 
 def collect_vacancies(s: Settings, api: HHApi) -> CollectionResult:
@@ -149,6 +151,7 @@ def collect_vacancies(s: Settings, api: HHApi) -> CollectionResult:
                 )
             except (requests.RequestException, ValueError) as exc:
                 result.failed_searches += 1
+                result.errors.append(str(exc))
                 logger.error("Ошибка HH [%s, area=%s, page=%s]: %s", text, area, page, exc)
                 if isinstance(exc, requests.HTTPError) and exc.response is not None:
                     if exc.response.status_code in (403, 429):
@@ -205,9 +208,43 @@ def collect_vacancies(s: Settings, api: HHApi) -> CollectionResult:
 def main():
     s = Settings()
     notifier = TelegramNotifier()
-    # /vacancies — публичный endpoint, OAuth-токен здесь не нужен.
-    with HHApi(api_base=s.api_base, app_name=s.app_name) as api:
+    if not s.hh_app_token:
+        logger.warning(
+            "HH_APP_TOKEN не задан: запрос без авторизации. "
+            "HH документирует поиск с авторизацией приложения; "
+            "при отказе настройте токен приложения из dev.hh.ru/admin."
+        )
+    with HHApi(api_base=s.api_base, app_name=s.app_name, token=s.hh_app_token) as api:
         result = collect_vacancies(s, api)
+
+    if result.failed_searches or result.invalid_items:
+        summary = os.getenv("GITHUB_STEP_SUMMARY")
+        if summary:
+            with open(summary, "a", encoding="utf-8") as stream:
+                # HTML-экранирование защищает разметку summary от данных сервера.
+                stream.write("### Ошибка сбора вакансий\n\n")
+                stream.write(f"Запросов: {result.searches_done}; ошибок: {result.failed_searches}.\n\n")
+                for error in dict.fromkeys(result.errors):
+                    stream.write(f"<pre>{escape(error)}</pre>\n")
+
+    def send_notification(text, file_path=None):
+        try:
+            if file_path is None:
+                notifier.send(text)
+            else:
+                notifier.send(text, file_path=file_path)
+        except TelegramError as exc:
+            logger.error("Ошибка доставки уведомления: %s", exc)
+            summary = os.getenv("GITHUB_STEP_SUMMARY")
+            if summary:
+                with open(summary, "a", encoding="utf-8") as stream:
+                    stream.write(f"### Ошибка Telegram\n\n<pre>{escape(str(exc))}</pre>\n")
+            if result.failed_searches or result.invalid_items:
+                raise RuntimeError(
+                    "Сбой сбора HH и отдельный сбой доставки Telegram; "
+                    "причины сохранены в журнале и сводке запуска"
+                ) from exc
+            raise
 
     warnings = []
     if result.failed_searches:
@@ -228,14 +265,14 @@ def main():
         )
         if warnings:
             msg += "\n" + "\n".join(warnings)
-        notifier.send(msg, file_path=output_file)
+        send_notification(msg, file_path=output_file)
     elif result.failed_searches or result.invalid_items:
-        notifier.send("❌ Не удалось собрать подборку.\n" + "\n".join(warnings))
+        send_notification("❌ Не удалось собрать подборку.\n" + "\n".join(warnings))
     else:
         msg = "ℹ️ По заданным фильтрам вакансии за последние дни не найдены."
         if warnings:
             msg += "\n" + "\n".join(warnings)
-        notifier.send(msg)
+        send_notification(msg)
 
     if result.failed_searches or result.invalid_items:
         # Не превращаем сбой API в зелёный запуск GitHub Actions.

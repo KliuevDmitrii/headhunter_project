@@ -12,6 +12,8 @@ class Settings:
         self.api_base = hh.get("api_base")
         self.oauth_token_url = hh.get("oauth_token_url")
         self.app_name = hh.get("app_name")
+        # Отдельно от старого HH_ACCESS_TOKEN соискателя.
+        self.hh_app_token = (os.getenv("HH_APP_TOKEN") or "").strip() or None
         self.resume_ids = [
             x.strip() for x in hh.get("resume_ids", "").split(",") if x.strip()
         ]
